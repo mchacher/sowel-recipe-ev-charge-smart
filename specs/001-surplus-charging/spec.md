@@ -85,6 +85,9 @@ Validation: `min_soc` ≤ `target_soc`; the charger exists and is an `ev_charger
 - [x] AC6 — Two cars configured, one plugged → that one is the active car; both plugged, one charging → that one.
 - [x] AC7 — Charger switched by hand → the recipe stays out until unplug.
 - [ ] AC8 — Live on the owner's installation (Rafale + dé): a surplus start, a stop, a wake from sleep.
+  - Candidate instance, 2026-10-03, real Rafale and dé, car asleep at 16 %: **guarantee start** (departure 21:00) → first ON accepted but the car did not draw → restart after the 2-min window → charger refused → `wake` → ON accepted → 2.15 kW (FR10, FR11, FR11b); **`refresh`** 60 s after the start → the car reported `charging` 10 s later (FR10); **target lowered** to 15 % → charger off, claim released, `done` (FR5); **a person's ON** from the API → `manual`, charge left running despite the target (FR13).
+  - Not yet: the **surplus start** — the candidate instance has no main meter, so its arbiter is disabled (the recipe logs `arbiter-disabled` once). To check on the owner's installation.
+  - Found and fixed there: the missing `zone` slot (PR #2), the activity labels (core PR #1010).
 
 ## Edge cases
 

@@ -2,12 +2,12 @@
 
 ## Steps
 
-- [ ] 1. Core spec 184 (`refresh`) merged and released; Renault plugin publishes `refresh`.
+- [x] 1. Core spec 184 (`refresh`) merged and released; Renault plugin publishes `refresh`.
 - [x] 2. `decide.ts`, `rate.ts` (pure) + tests.
 - [x] 3. `inputs.ts`, `charger.ts` + tests with a fake ctx.
 - [x] 4. `index.ts` (lifecycle, claim, tick, events, tile, i18n) + tests with fake timers.
 - [x] 5. Manifest, README, changelog.
-- [ ] 6. Candidate instance: charger profile set, recipe installed from a personal source; surplus simulated by the arbiter state; a real wake from sleep with the owner's agreement.
+- [ ] 6. (guarantee, wake, refresh, done, manual hold: done 2026-10-03; surplus: pending a real arbiter) Candidate instance: charger profile set, recipe installed from a personal source; surplus simulated by the arbiter state; a real wake from sleep with the owner's agreement.
 
 ## Test plan
 
