@@ -2,8 +2,12 @@
 
 All notable changes to this recipe. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
-## Unreleased
+## v0.1.0
 
-- Spec 002: the charging current follows the surplus through a modulating claim (core spec 185); new `max_current` parameter; tile shows the power.
-- Repository scaffold: recipe skeleton, CI, release workflow, hooks, skills.
-- Spec 001: surplus charging through the arbiter, guaranteed minimum by departure, wake and retry, refresh after a start, manual hold.
+First release. **Smart EV charging**: one charger (core `ev_charger`), one or more cars (core `electric_vehicle`) — specs 001 and 002, checked live on a dé charger and a Renault Rafale.
+
+- **Solar surplus** through Sowel's energy arbiter, up to a target battery level (the car's own limit honoured). On a core with modulating claims (spec 185), the charging current follows the surplus, 1 A at a time, up to `max_current`.
+- **Guaranteed minimum** by a departure time, from the grid: off-peak hours first, else the latest start computed from a learned charge rate.
+- **Wakes a sleeping car** when the charger refuses to start, and refreshes the car's data after a start. A car that refuses twice (full at its own limit) is left alone until it is unplugged.
+- **Never fights you**: a charge switched by hand is left alone until the car is unplugged.
+- **Tile**: mode, battery, target and current; notifiable `alert` when the minimum is at risk.
