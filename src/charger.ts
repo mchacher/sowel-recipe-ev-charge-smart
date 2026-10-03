@@ -155,6 +155,16 @@ export class ChargerControl {
     }
   }
 
+  /**
+   * Spec 002 FR2 — set the charging current on an owned charge. Never throws;
+   * no recipe-log line (a budget can move every minute).
+   */
+  async setCurrent(amps: number): Promise<boolean> {
+    if (!this.owned || this.busy) return false;
+    const r = await this.send("charge_current", amps);
+    return r.success;
+  }
+
   /** Forget ownership (unplugged, manual hold). */
   disown(): void {
     this.owned = false;

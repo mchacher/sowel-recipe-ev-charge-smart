@@ -55,9 +55,19 @@ export const SLOTS: RecipeSlotDef[] = [
     defaultValue: "07:30",
   },
   {
+    id: "max_current",
+    name: "Maximum surplus current (A)",
+    description: "The highest current the surplus may drive the charger to (core spec 185)",
+    type: "number",
+    required: true,
+    defaultValue: 16,
+    constraints: { min: 6, max: 32 },
+  },
+  {
     id: "charge_current",
     name: "Charge current (A)",
-    description: "The current the charger is set to when the recipe starts it",
+    description:
+      "The current of the guaranteed minimum (and of surplus charging on a core without modulating claims)",
     type: "number",
     required: true,
     defaultValue: 10,
@@ -91,9 +101,14 @@ export const I18N: Record<string, RecipeLangPack> = {
         name: "Départ",
         description: "Heure à laquelle le minimum doit être atteint, chaque jour",
       },
+      max_current: {
+        name: "Courant maximal sur surplus (A)",
+        description: "Le courant le plus élevé que le surplus peut demander à la borne",
+      },
       charge_current: {
         name: "Courant de charge (A)",
-        description: "Le courant réglé sur la borne quand la recette démarre la charge",
+        description:
+          "Le courant du minimum garanti (et de la charge sur surplus sur un core sans demande modulable)",
       },
     },
   },

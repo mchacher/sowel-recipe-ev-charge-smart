@@ -2,9 +2,9 @@
 
 ## Steps
 
-- [ ] 1. Types, `current.ts` + tests.
-- [ ] 2. Inputs (order bounds), `ChargerControl.setCurrent` + tests.
-- [ ] 3. Instance wiring (claim, onBudget, start current, guarantee unchanged, tile) + tests.
+- [x] 1. Types, `current.ts` + tests.
+- [x] 2. Inputs (order bounds), `ChargerControl.setCurrent` + tests.
+- [x] 3. Instance wiring (claim, onBudget, start current, guarantee unchanged, tile) + tests.
 - [ ] 4. Validate, agent review, PR.
 
 ## Test plan

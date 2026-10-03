@@ -308,6 +308,73 @@ describe("ev-charge-smart instance", () => {
     h.stop();
   });
 
+  it("claims with the charger's range and keeps watts for older cores (spec 002 FR1)", async () => {
+    const w = new FakeWorld().charger().car("rafale");
+    const h = start(w, { ...PARAMS, max_current: 16 });
+    await settle();
+    expect(w.lastClaim()).toMatchObject({
+      watts: 2300,
+      modulation: { minW: 1380, maxW: 3680, stepW: 230 },
+    });
+    h.stop();
+  });
+
+  it("a surplus start uses the budget current; budget changes follow while charging (AC2, AC3)", async () => {
+    const w = new FakeWorld().charger({ charge_current: 10 }).car("rafale");
+    const h = start(w, { ...PARAMS, max_current: 16 });
+    await settle();
+    w.grant();
+    w.budget(2990);
+    await settle();
+    expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([13]);
+    expect(w.equipments.get("charger")!.data.state).toBe(true);
+    w.budget(3680);
+    await settle();
+    expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([13, 16]);
+    w.budget(1400);
+    await settle();
+    expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([13, 16, 6]);
+    expect(w.logs.filter((l) => /courant/i.test(l.message))).toHaveLength(0); // no log line per change
+    h.stop();
+  });
+
+  it("the guarantee keeps its fixed current whatever the budget (FR4)", async () => {
+    const w = new FakeWorld().charger({ charge_current: 16 }).car("rafale", { battery_level: 20 });
+    w.offPeakNow = true;
+    const h = start(w, { ...PARAMS, charge_current: 10, max_current: 16 });
+    await settle();
+    expect(w.state.get("mode")).toBe("guarantee");
+    expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([10]);
+    w.grant();
+    w.budget(3680);
+    await settle();
+    expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([10]);
+    h.stop();
+  });
+
+  it("an older core (no budgetW) gets spec 001's behaviour (AC4)", async () => {
+    const w = new FakeWorld().charger({ charge_current: 16 }).car("rafale");
+    w.core185 = false;
+    const h = start(w, { ...PARAMS, charge_current: 10, max_current: 16 });
+    await settle();
+    w.grant();
+    await settle();
+    expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([10]);
+    h.stop();
+  });
+
+  it("the tile shows the power in surplus mode (FR6)", async () => {
+    const w = new FakeWorld().charger().car("rafale");
+    const h = start(w);
+    await settle();
+    w.grant();
+    await settle();
+    w.set("charger", "power", 2990);
+    await settle();
+    expect(w.state.get("summary")).toMatch(/☀ Surplus · 50 % → 80 % · 3,0 kW/);
+    h.stop();
+  });
+
   it("logs one line per decision change, none per tick", async () => {
     const w = new FakeWorld().charger().car("rafale");
     const h = start(w);

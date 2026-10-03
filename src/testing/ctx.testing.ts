@@ -38,6 +38,10 @@ export class FakeWorld {
   car_: "awake" | "asleep" | "full" = "awake";
   /** Synchronous grant inside claimCapacity (the arbiter may do that). */
   grantOnClaim = false;
+  /** Core spec 185: handles carry budgetW(); false = an older core. */
+  core185 = true;
+  /** Bounds of the charger's `charge_current` order. */
+  currentBounds: { min?: number; max?: number } = { min: 6, max: 16 };
   offPeakNow: boolean | null = null;
 
   add(e: FakeEquipment): this {
@@ -107,6 +111,14 @@ export class FakeWorld {
     c.onGranted();
   }
 
+  budgetW: number | null = null;
+
+  /** The arbiter assigns a budget (spec 185). */
+  budget(watts: number): void {
+    this.budgetW = watts;
+    this.lastClaim()!.onBudget?.(watts);
+  }
+
   revoke(reason = "surplus-deficit"): void {
     this.lastClaim()!.onRevoked(reason);
   }
@@ -143,7 +155,11 @@ export class FakeWorld {
             value,
           })),
         getOrderBindingsWithDetails: (id) =>
-          (this.equipments.get(id)?.orders ?? []).map((alias) => ({ alias })),
+          (this.equipments.get(id)?.orders ?? []).map((alias) =>
+            id === "charger" && alias === "charge_current"
+              ? { alias, ...this.currentBounds }
+              : { alias },
+          ),
       },
       logger,
       state: {
@@ -174,6 +190,9 @@ export class FakeWorld {
                       status = "released";
                     },
                     reportNeed: (n) => void need.push(n),
+                    ...(this.core185
+                      ? { budgetW: () => (status === "granted" ? this.budgetW : null) }
+                      : {}),
                   };
                   this.claims.push({ ...req, handle, need });
                   if (this.grantOnClaim && status === "pending") {

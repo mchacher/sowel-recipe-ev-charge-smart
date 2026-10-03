@@ -30,10 +30,10 @@ Spec 001 claims the surplus at one fixed current (`charge_current`, default 10 A
 
 ## Acceptance criteria
 
-- [ ] AC1 — Budget 2990 W at 230 V → current 13 A; 1380 → 6 A; 5000 → max.
-- [ ] AC2 — A budget change while charging on surplus sets `charge_current`; in guarantee mode it does not.
-- [ ] AC3 — A surplus start uses the budget current.
-- [ ] AC4 — With no `budgetW` on the handle (older core), behaviour is spec 001's.
+- [x] AC1 — Budget 2990 W at 230 V → current 13 A; 1380 → 6 A; 5000 → max.
+- [x] AC2 — A budget change while charging on surplus sets `charge_current`; in guarantee mode it does not.
+- [x] AC3 — A surplus start uses the budget current.
+- [x] AC4 — With no `budgetW` on the handle (older core), behaviour is spec 001's.
 - [ ] AC5 — Live: the current follows the surplus on a sunny day (owner's installation).
 
 ## Edge cases
