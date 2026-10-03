@@ -2,7 +2,7 @@
   "id": "ev-charge-smart",
   "type": "recipe",
   "name": "Smart EV charging",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Charge an electric vehicle from the solar surplus up to a target, guarantee a minimum by departure from off-peak hours, and wake a sleeping car when the charger refuses to start.",
   "icon": "BatteryCharging",
   "repo": "mchacher/sowel-recipe-ev-charge-smart",
