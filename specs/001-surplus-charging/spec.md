@@ -54,7 +54,7 @@ Validation: `min_soc` ≤ `target_soc`; the charger exists and is an `ev_charger
 
 ### What to do (evaluated every minute and on every relevant change)
 
-- **FR4 — Unplugged.** Charger `vehicle` = `disconnected`: release the claim, clear the manual hold, nothing else.
+- **FR4 — Unplugged.** Charger `vehicle` = `disconnected`: release the claim, clear the manual hold, and switch the charger off if the recipe had started it — a charger left on would charge the next car (a guest's) without a decision.
 - **FR5 — Done.** Battery ≥ effective target, or the car reports `completed`: stop the charger if the recipe started it, release the claim (`reportNeed(false)`).
 - **FR6 — Guarantee.** Battery < `min_soc` and either (a) off-peak hours now (tariff configured), or (b) now ≥ the latest start: `departure` − (`min_soc` − battery) / rate − 30 min. Charge from the grid regardless of the arbiter: the claim stays open (spec 140 author rule for a hard quota), and a revoke does not stop the charge.
 - **FR7 — Surplus.** Otherwise, battery < effective target (or unknown): keep a claim on the charger at `charge_current` × voltage (measured `voltage`, else 230 V), `reportNeed(true)`. `onGranted` starts the charge, `onRevoked` stops it at once.
@@ -64,9 +64,10 @@ Validation: `min_soc` ≤ `target_soc`; the charger exists and is an `ev_charger
 ### Starting and stopping
 
 - **FR10 — Start.** Set `charge_current` if the charger's current differs, then `state` on. Success: the recipe owns the charge; 60 s later it sends `refresh` to the active car (when bound).
-- **FR11 — Wake.** If `state` on fails (`{success:false}` — a sleeping car makes the charger refuse) and a candidate car has `wake` bound: `wake` every candidate, wait 30 s, retry `state` on. At most two wakes per start. Still failing: stop trying for 15 min, log the charger's reason, set `alert`.
+- **FR11 — Wake.** If `state` on fails (`{success:false}` — a sleeping car makes the charger refuse) and a candidate car has `wake` bound: `wake` every candidate, wait 30 s, retry `state` on. At most two wakes per start. Still failing: no new start for 15 min (the need reported to the arbiter drops meanwhile). A second failed start in the same plug-in session means the car wants no more (full at its own limit, or scheduled): the recipe gives up until the car is unplugged (mode `done`), and sets `alert` only when the guaranteed minimum is at stake. A thrown dispatch (integration unavailable) is not followed by a wake.
+- **FR11b — Car stopping by itself.** On the dé, the charger's `state` reads "the car is drawing" and drops by itself when the car pauses, sleeps or completes. While the decision is to run, a charge that stopped drawing is restarted (with FR11's wake) once the 2-min window after the recipe's last order has passed.
 - **FR12 — Stop.** `state` off, only when the recipe started the charge.
-- **FR13 — Manual hold.** The charger's `state` changes without the recipe asking (a user, a button, another recipe), or the arbiter revokes with `manual-override`: the recipe stops acting on the charger until it reads `vehicle` = `disconnected` (FR4). It keeps reporting in its tile.
+- **FR13 — Manual hold.** A person switches the charger — an `equipment.order.executed` on its `state` with a manual, button, shared-access or external source (not the delivery-retry channel) — or the arbiter revokes with `manual-override`: the recipe stops acting on the charger until it reads `vehicle` = `disconnected` (FR4). The charger's `state` reading is never used for this: it follows the car's draw. A switch on the charger's own buttons is not seen (it sends no Sowel order).
 
 ### Visibility
 
@@ -75,25 +76,26 @@ Validation: `min_soc` ≤ `target_soc`; the charger exists and is an `ev_charger
 
 ## Acceptance criteria
 
-- [ ] AC1 — Surplus granted → the charger starts at `charge_current`; revoked → it stops within one evaluation.
-- [ ] AC2 — Battery reaches the effective target → charge stopped, claim released; the car's own lower limit is honoured.
-- [ ] AC3 — Below the minimum at night with off-peak hours → charges off-peak; without a tariff → starts at the latest start computed from the learned rate.
-- [ ] AC4 — Charger refuses (sleeping car) → `wake`, retry, charge starts; two failed wakes → back-off and `alert`.
-- [ ] AC5 — `refresh` sent to the car 60 s after every start.
-- [ ] AC6 — Two cars configured, one plugged → that one is the active car; both plugged, one charging → that one.
-- [ ] AC7 — Charger switched by hand → the recipe stays out until unplug.
+- [x] AC1 — Surplus granted → the charger starts at `charge_current`; revoked → it stops within one evaluation.
+- [x] AC2 — Battery reaches the effective target → charge stopped, claim released; the car's own lower limit is honoured.
+- [x] AC3 — Below the minimum at night with off-peak hours → charges off-peak; without a tariff → starts at the latest start computed from the learned rate.
+- [x] AC4 — Charger refuses (sleeping car) → `wake`, retry, charge starts; two failed wakes → back-off and `alert`.
+- [x] AC5 — `refresh` sent to the car 60 s after every start.
+- [x] AC6 — Two cars configured, one plugged → that one is the active car; both plugged, one charging → that one.
+- [x] AC7 — Charger switched by hand → the recipe stays out until unplug.
 - [ ] AC8 — Live on the owner's installation (Rafale + dé): a surplus start, a stop, a wake from sleep.
 
 ## Edge cases
 
-| Case                                         | Expected                                                                                                               |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| No vehicles configured                       | Surplus charging until the car stops drawing; no guarantee                                                             |
-| Charger has no energy profile                | Claim denied `not-profiled`: logged once, tile says so; guarantee still works                                          |
-| Arbiter disabled                             | Same as above (`arbiter-disabled`)                                                                                     |
-| Car data hours old (car asleep)              | Used as is; a start triggers `refresh`, which brings fresh data                                                        |
-| Car not `at_home` but charger says connected | Another car (a guest): battery unknown, surplus only                                                                   |
-| Charger offline / integration disconnected   | `dispatchOrder` throws: logged, retried at the next evaluation                                                         |
-| Departure passed with minimum unreached      | FR9 alert; the next day's departure applies                                                                            |
-| `min_soc` = 0                                | No guarantee, surplus only                                                                                             |
-| Recipe restarted mid-charge                  | Reads the charger: on and charging with the recipe's state saying it owned it → keeps ownership; otherwise manual hold |
+| Case                                         | Expected                                                                                                                 |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| No vehicles configured                       | Surplus charging until the car stops drawing; no guarantee                                                               |
+| Charger has no energy profile                | Claim denied `not-profiled`: logged once, tile says so; guarantee still works                                            |
+| Arbiter disabled                             | Same as above (`arbiter-disabled`)                                                                                       |
+| Car data hours old (car asleep)              | Used as is; a start triggers `refresh`, which brings fresh data                                                          |
+| Car not `at_home` but charger says connected | Another car (a guest): battery unknown, surplus only                                                                     |
+| Charger offline (`vehicle` unknown)          | Mode `offline`: nothing changes (hold and ownership kept), need withdrawn; a thrown dispatch is logged and retried later |
+| Arbiter denies the claim                     | Logged once per reason; asked again every 15 min, not on every reading                                                   |
+| Departure passed with minimum unreached      | FR9 alert; the next day's departure applies                                                                              |
+| `min_soc` = 0                                | No guarantee, surplus only                                                                                               |
+| Recipe restarted mid-charge                  | Reads the charger: on and charging with the recipe's state saying it owned it → keeps ownership; otherwise manual hold   |

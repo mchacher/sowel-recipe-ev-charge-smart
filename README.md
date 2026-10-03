@@ -7,9 +7,20 @@ Smart EV charging for [Sowel](https://docs.sowel.org): one charger (core `ev_cha
 - **Wakes a sleeping car** when the charger refuses to start, and refreshes the car's data after a start.
 - Leaves a charge switched by hand alone until the car is unplugged.
 
-## Status
+## Parameters
 
-Specified (spec 001), not implemented yet.
+| Parameter              | Default | Meaning                                                                 |
+| ---------------------- | ------- | ----------------------------------------------------------------------- |
+| Charger                | —       | The EV charger to drive                                                 |
+| Vehicles               | —       | The cars that charge on it (optional; without one, no % target)         |
+| Target (%)             | 80      | Surplus charging stops here, or at the car's own limit if lower         |
+| Guaranteed minimum (%) | 30      | Reached by the departure time from the grid, off-peak first; 0 disables |
+| Departure              | 07:30   | When the minimum must be reached                                        |
+| Charge current (A)     | 10      | Set on the charger at each start                                        |
+
+Surplus charging needs an energy profile on the charger (flexible load). Without one, the guaranteed minimum still works.
+
+The recipe's state carries `summary` (tile), `mode`, `active_vehicle` and `alert` (notifiable: a car that did not wake, a minimum missed at departure).
 
 ## Development
 

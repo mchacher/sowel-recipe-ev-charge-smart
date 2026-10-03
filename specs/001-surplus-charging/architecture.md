@@ -45,13 +45,14 @@ createRecipe() → RecipeDefinition (id "ev-charge-smart", slots, i18n fr)
 
 Evaluated top to bottom, first match wins:
 
-| #   | Condition                                                          | Mode        | Charger         | Claim           |
-| --- | ------------------------------------------------------------------ | ----------- | --------------- | --------------- |
-| 1   | `vehicle` = disconnected                                           | `unplugged` | — (nothing)     | release         |
-| 2   | manual hold                                                        | `manual`    | — (left alone)  | need false      |
-| 3   | battery known ≥ effective target, or car `completed`               | `done`      | stop if owned   | release         |
-| 4   | battery known < `min_soc` and (off-peak now or now ≥ latest start) | `guarantee` | run             | keep, need true |
-| 5   | battery unknown or < effective target                              | `surplus`   | run iff granted | keep, need true |
+| #   | Condition                                                                                     | Mode        | Charger            | Claim            |
+| --- | --------------------------------------------------------------------------------------------- | ----------- | ------------------ | ---------------- |
+| 1   | `vehicle` = disconnected                                                                      | `unplugged` | off if owned (FR4) | release          |
+| 1b  | `vehicle` unknown (charger offline)                                                           | `offline`   | — (nothing)        | keep, need false |
+| 2   | manual hold                                                                                   | `manual`    | — (left alone)     | need false       |
+| 3   | battery known ≥ effective target, car `completed`, or the car refused two starts this plug-in | `done`      | stop if owned      | release          |
+| 4   | battery known < `min_soc` and (off-peak now or now ≥ latest start)                            | `guarantee` | run                | keep, need true  |
+| 5   | battery unknown or < effective target                                                         | `surplus`   | run iff granted    | keep, need true  |
 
 `latest start = next departure − (min_soc − battery) / rate − 30 min`. The next departure is today's if not yet passed, else tomorrow's.
 
