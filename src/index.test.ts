@@ -352,6 +352,77 @@ describe("ev-charge-smart instance", () => {
     h.stop();
   });
 
+  it("a surplus charge turning into a guarantee moves to the fixed current", async () => {
+    const w = new FakeWorld().charger({ charge_current: 10 }).car("rafale", { battery_level: 20 });
+    const h = start(w, { ...PARAMS, charge_current: 10, max_current: 16 });
+    await settle();
+    w.grant();
+    w.budget(1380);
+    await settle();
+    expect(w.equipments.get("charger")!.data.charge_current).toBe(6);
+    w.offPeakNow = true; // off-peak begins: the guarantee takes over
+    await settle(60_000);
+    expect(w.state.get("mode")).toBe("guarantee");
+    expect(w.equipments.get("charger")!.data.charge_current).toBe(10);
+    h.stop();
+  });
+
+  it("sends a current once per value while the charger has not confirmed it", async () => {
+    const w = new FakeWorld().charger({ charge_current: 10 }).car("rafale");
+    const h = start(w, { ...PARAMS, max_current: 16 });
+    await settle();
+    w.grant();
+    w.budget(2990);
+    await settle();
+    w.reflectCurrent = false;
+    w.budget(3680);
+    for (let i = 0; i < 10; i++) w.set("charger", "power", 3000 + i); // readings
+    await settle(5 * 60_000);
+    expect(w.ordersTo("charge_current").filter((o) => o.value === 16)).toHaveLength(1);
+    h.stop();
+  });
+
+  it("a current order does not delay a restart (quiet window is for starts)", async () => {
+    const w = new FakeWorld().charger({ charge_current: 10 }).car("rafale");
+    const h = start(w, { ...PARAMS, max_current: 16 });
+    await settle();
+    w.grant();
+    w.budget(2990);
+    await settle(150_000); // past the start's quiet window
+    w.budget(3680); // a current order now
+    await settle();
+    w.carStops();
+    await settle(61_000); // next tick, well inside 120 s of the current order
+    expect(w.ordersTo("state").map((o) => o.value)).toEqual([true, true]);
+    h.stop();
+  });
+
+  it("learns the charge rate only at the guarantee's current", async () => {
+    const w = new FakeWorld().charger({ charge_current: 10 }).car("rafale", { battery_level: 40 });
+    const h = start(w, { ...PARAMS, charge_current: 10, max_current: 16 });
+    await settle();
+    w.grant();
+    w.budget(3680); // surplus at 16 A
+    await settle();
+    w.set("rafale", "battery_level", 41);
+    await settle(40 * 60_000);
+    w.set("rafale", "battery_level", 50);
+    await settle();
+    expect(w.state.get("rate.rafale")).toMatchObject({ ratePctPerH: 10, anchor: null });
+    h.stop();
+  });
+
+  it("max_current below the minimum: binary claim, spec 001 behaviour", async () => {
+    const w = new FakeWorld().charger({ charge_current: 16 }).car("rafale");
+    const h = start(w, { ...PARAMS, charge_current: 10, max_current: 4 });
+    await settle();
+    expect(w.lastClaim()!.modulation).toBeUndefined();
+    w.grant();
+    await settle();
+    expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([10]);
+    h.stop();
+  });
+
   it("an older core (no budgetW) gets spec 001's behaviour (AC4)", async () => {
     const w = new FakeWorld().charger({ charge_current: 16 }).car("rafale");
     w.core185 = false;
@@ -363,15 +434,15 @@ describe("ev-charge-smart instance", () => {
     h.stop();
   });
 
-  it("the tile shows the power in surplus mode (FR6)", async () => {
+  it("the tile shows the current in surplus mode (FR6)", async () => {
     const w = new FakeWorld().charger().car("rafale");
     const h = start(w);
     await settle();
     w.grant();
     await settle();
-    w.set("charger", "power", 2990);
+    w.budget(2990);
     await settle();
-    expect(w.state.get("summary")).toMatch(/☀ Surplus · 50 % → 80 % · 3,0 kW/);
+    expect(w.state.get("summary")).toMatch(/☀ Surplus · 50 % → 80 % · 13 A/);
     h.stop();
   });
 

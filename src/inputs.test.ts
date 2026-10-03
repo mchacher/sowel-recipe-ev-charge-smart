@@ -73,3 +73,13 @@ describe("reading equipments by contract alias", () => {
     expect(readCharger(w.ctx(), "charger").vehicle).toBeNull();
   });
 });
+
+describe("charge_current order bounds (spec 002)", () => {
+  it("reads min and max from the charger's order binding", () => {
+    const w = new FakeWorld().charger();
+    w.currentBounds = { min: 6, max: 13 };
+    expect(readCharger(w.ctx(), "charger")).toMatchObject({ currentMin: 6, currentMax: 13 });
+    w.currentBounds = {};
+    expect(readCharger(w.ctx(), "charger")).toMatchObject({ currentMin: null, currentMax: null });
+  });
+});

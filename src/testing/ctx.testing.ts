@@ -40,6 +40,8 @@ export class FakeWorld {
   grantOnClaim = false;
   /** Core spec 185: handles carry budgetW(); false = an older core. */
   core185 = true;
+  /** False: the charger never echoes a current order (unconfirmed / null reading). */
+  reflectCurrent = true;
   /** Bounds of the charger's `charge_current` order. */
   currentBounds: { min?: number; max?: number } = { min: 6, max: 16 };
   offPeakNow: boolean | null = null;
@@ -221,7 +223,8 @@ export class FakeWorld {
           });
         const eq = this.equipments.get(equipmentId);
         if (alias === "wake" && this.car_ === "asleep") this.car_ = "awake";
-        if (eq && alias === "charge_current") this.set(equipmentId, "charge_current", value);
+        if (eq && alias === "charge_current" && this.reflectCurrent)
+          this.set(equipmentId, "charge_current", value);
         if (eq && eq.type === "ev_charger" && alias === "state") {
           if (value === true) {
             if (this.car_ !== "awake")

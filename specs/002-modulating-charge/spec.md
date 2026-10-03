@@ -25,8 +25,11 @@ Spec 001 claims the surplus at one fixed current (`charge_current`, default 10 A
 - **FR2 — Budget → current.** On `onBudget(w)`: `amps = clamp(floor(w / V), minA, maxA)`. While the recipe owns a surplus charge, the charger's current is set to it when it differs (no log line per change — FR15 of spec 001: debug only).
 - **FR3 — Start.** A surplus start uses the budget current (else `minA`); a guarantee start uses `charge_current`, as in spec 001.
 - **FR4 — Guarantee keeps its current.** In guarantee mode a budget change does not touch the current.
+- **FR4b — Guarantee current.** An owned charge in guarantee mode is set to `charge_current` if it runs at another current (a surplus charge turning into a guarantee). The claim stays open and modulating meanwhile, so the core may journal `watts-divergence` / `budget-not-honored` and count the excess over the budget as background: that is what grid charging is, and it keeps the arbiter's books right.
+- **FR4c — Learned rate.** The charge rate (spec 001 FR8) is learned only while the charger runs at `charge_current`: it times the guarantee, which runs at that current.
+- **FR4d — One order per value.** A current is ordered once per value; it is sent again only when the wanted current changes (the dé confirms in 1–8 s while readings arrive every few seconds). Current orders do not extend the start window (spec 001 FR11b).
 - **FR5 — New slot.** `max_current` (A, 6–32, default 16): the upper bound in surplus mode.
-- **FR6 — Tile.** In surplus mode the summary adds the current power, e.g. "☀ Surplus · 45 % → 80 % · 2.3 kW".
+- **FR6 — Tile.** In surplus mode the summary adds the current, e.g. "☀ Surplus · 45 % → 80 % · 13 A" (the setpoint changes only with the budget; a measured power would rewrite the tile on every reading).
 
 ## Acceptance criteria
 

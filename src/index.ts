@@ -72,16 +72,12 @@ const MODE_LABEL: Record<Mode, string> = {
   surplus: "Surplus",
 };
 
-function kw(watts: number): string {
-  return `${(watts / 1000).toFixed(1).replace(".", ",")} kW`;
-}
-
 export function summaryOf(
   d: Decision,
   battery: number | null,
   charging: boolean,
   minSoc: number,
-  powerW: number | null = null,
+  amps: number | null = null,
 ): string {
   const pct = battery === null ? "?" : `${Math.round(battery)} %`;
   switch (d.mode) {
@@ -97,7 +93,7 @@ export function summaryOf(
       return `Minimum garanti · ${pct} → ${minSoc} %`;
     case "surplus":
       return charging
-        ? `☀ Surplus · ${pct} → ${d.effectiveTarget} %${powerW !== null && powerW > 0 ? ` · ${kw(powerW)}` : ""}`
+        ? `☀ Surplus · ${pct} → ${d.effectiveTarget} %${amps !== null && amps > 0 ? ` · ${amps} A` : ""}`
         : `En attente de surplus · ${pct}`;
   }
 }
@@ -147,7 +143,9 @@ class Instance implements RecipeInstanceHandle {
     this.control = new ChargerControl({
       chargerId: p.chargerId,
       dispatch: (id, alias, value) => {
-        if (id === p.chargerId) this.quietUntil = Date.now() + QUIET_MS;
+        // Only a start/stop gives the car a window to react; a current order
+        // must not delay a restart (spec 002 review).
+        if (id === p.chargerId && alias === "state") this.quietUntil = Date.now() + QUIET_MS;
         return ctx.dispatchOrder(id, alias, value);
       },
       log: (m, level) => ctx.log(m, level),
@@ -241,8 +239,11 @@ class Instance implements RecipeInstanceHandle {
   private learn(carId: string): void {
     const car = readCar(this.ctx, carId);
     if (car.battery === null) return;
+    const charger = readCharger(this.ctx, this.p.chargerId);
+    // The rate times the guarantee, which runs at `charge_current`: learn only
+    // at that current, not from surplus charging at 6–16 A (spec 002 review).
     const charging =
-      this.control.owned && readCharger(this.ctx, this.p.chargerId).vehicle === "charging";
+      this.control.owned && charger.vehicle === "charging" && charger.current === this.p.current;
     const key = `rate.${carId}`;
     this.ctx.state.set(
       key,
@@ -253,6 +254,8 @@ class Instance implements RecipeInstanceHandle {
   /** Spec 002 — the range claimed with, and the current the last budget allows. */
   private range: CurrentRange | null = null;
   private budgetAmps: number | null = null;
+  /** The current last ordered and not yet seen on the charger. */
+  private sentAmps: number | null = null;
 
   /** The claim is modulating: the core supports spec 185 and a range was declared. */
   private modulating(): boolean {
@@ -284,9 +287,9 @@ class Instance implements RecipeInstanceHandle {
       note: "ev-charge-smart",
       onGranted: () => {
         this.granted = true;
-        // Core spec 185 calls onBudget right after onGranted: decide once the
-        // first budget is in, so the charge starts at its current, not at the
-        // minimum and then again.
+        // Core spec 185 calls onBudget right after onGranted (which evaluates
+        // too); deferring this one only avoids a start at the minimum current
+        // followed by a second current order.
         if (range.modulation) queueMicrotask(() => this.evaluate());
         else this.evaluate();
       },
@@ -448,25 +451,37 @@ class Instance implements RecipeInstanceHandle {
         this.after(this.control.stop(MODE_LABEL[d.mode]));
       }
 
-      // Spec 002 FR2/FR4 — follow the budget on an owned, drawing surplus charge.
+      // Spec 002 FR2/FR4 — the current of an owned, drawing charge: the
+      // budget's on surplus, the fixed one on the guarantee (a surplus charge
+      // turning into a guarantee must not stay at 6 A).
+      const desired =
+        d.charger !== "run"
+          ? null
+          : d.mode === "surplus" && this.modulating()
+            ? this.budgetAmps
+            : d.mode === "guarantee"
+              ? this.p.current
+              : null;
+      if (charger.current === desired || !this.control.owned) this.sentAmps = null;
       if (
-        d.mode === "surplus" &&
-        d.charger === "run" &&
-        this.modulating() &&
-        this.budgetAmps !== null &&
+        desired !== null &&
         this.control.owned &&
         drawing &&
         !this.control.starting &&
-        charger.current !== this.budgetAmps
+        charger.current !== desired &&
+        // Sent once per value: the charger confirms in seconds, readings come
+        // every few seconds, and a refused order waits for the next change.
+        this.sentAmps !== desired
       ) {
-        const amps = this.budgetAmps;
-        void this.control.setCurrent(amps).then((ok) => {
-          if (!ok) this.ctx.logger.debug({ amps }, "ev-charge-smart: charge current not applied");
+        this.sentAmps = desired;
+        void this.control.setCurrent(desired).then((ok) => {
+          if (!ok)
+            this.ctx.logger.debug({ amps: desired }, "ev-charge-smart: charge current not applied");
         });
       }
 
       this.departureCheck(car, now);
-      this.publish(d, car, charger.vehicle === "charging", charger.power);
+      this.publish(d, car, charger.vehicle === "charging", charger.current);
     } catch (err) {
       this.ctx.logger.error({ err }, "ev-charge-smart evaluation failed");
     }
@@ -493,7 +508,7 @@ class Instance implements RecipeInstanceHandle {
     d: Decision,
     car: CarView | null,
     charging: boolean,
-    powerW: number | null = null,
+    amps: number | null = null,
   ): void {
     if (d.mode !== this.lastMode) {
       this.lastMode = d.mode;
@@ -504,7 +519,7 @@ class Instance implements RecipeInstanceHandle {
       ? `Terminé · la voiture ne demande plus`
       : this.control.inBackoff() && d.charger === "run"
         ? "Voiture non réveillée · nouvel essai"
-        : summaryOf(d, car?.battery ?? null, charging, this.p.minSoc, powerW);
+        : summaryOf(d, car?.battery ?? null, charging, this.p.minSoc, amps);
     if (this.ctx.state.get("summary") !== summary) this.ctx.state.set("summary", summary);
     const activeId = car?.id ?? null;
     if (this.ctx.state.get("active_vehicle") !== activeId)
