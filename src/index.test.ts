@@ -3,6 +3,7 @@ import { createRecipe, readParams } from "./index.js";
 import { FakeWorld } from "./testing/ctx.testing.js";
 
 const PARAMS = {
+  zone: "garage",
   charger: "charger",
   vehicles: ["rafale"],
   target_soc: 80,
@@ -34,6 +35,11 @@ describe("ev-charge-smart instance", () => {
     expect(() => r.validate({ ...PARAMS, charger: "rafale" }, w.ctx())).toThrow("EV charger");
     expect(() => r.validate({ ...PARAMS, min_soc: 90 }, w.ctx())).toThrow("minimum");
     expect(() => r.validate(PARAMS, w.ctx())).not.toThrow();
+  });
+
+  it("declares a zone slot first, so the instance shows in its zone's Behaviours", () => {
+    const zone = createRecipe().slots[0];
+    expect(zone).toMatchObject({ id: "zone", type: "zone", required: true });
   });
 
   it("reads params defensively", () => {

@@ -1,6 +1,15 @@
 import type { RecipeLangPack, RecipeSlotDef } from "./sowel-types.js";
 
 export const SLOTS: RecipeSlotDef[] = [
+  // Every recipe declares its zone: the form fills it with the current zone,
+  // and a zone's Behaviours list shows the instances whose `zone` is that zone.
+  {
+    id: "zone",
+    name: "Zone",
+    description: "The zone this recipe belongs to",
+    type: "zone",
+    required: true,
+  },
   {
     id: "charger",
     name: "Charger",
@@ -62,6 +71,7 @@ export const I18N: Record<string, RecipeLangPack> = {
     description:
       "Recharge sur le surplus solaire jusqu'à une cible, garantit un minimum avant le départ, réveille la voiture endormie.",
     slots: {
+      zone: { name: "Zone", description: "La zone à laquelle appartient la recette" },
       charger: { name: "Borne", description: "La borne de recharge à piloter" },
       vehicles: {
         name: "Véhicules",
