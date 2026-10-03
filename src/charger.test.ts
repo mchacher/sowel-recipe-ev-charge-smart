@@ -138,3 +138,20 @@ describe("ChargerControl", () => {
     expect(control.owned).toBe(false);
   });
 });
+
+describe("ChargerControl.setCurrent (spec 002)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("only on an owned charge; a refusal or a throw returns false", async () => {
+    const { w, control, req } = setup();
+    expect(await control.setCurrent(12)).toBe(false); // not owned
+    await control.start(req());
+    expect(await control.setCurrent(12)).toBe(true);
+    w.answer = (c) =>
+      c.alias === "charge_current" ? { success: false, error: "refused" } : undefined;
+    expect(await control.setCurrent(13)).toBe(false);
+    w.answer = (c) => (c.alias === "charge_current" ? "throw" : undefined);
+    expect(await control.setCurrent(14)).toBe(false);
+  });
+});

@@ -13,6 +13,11 @@ export interface ChargerView {
   vehicle: VehicleState | null;
   voltage: number | null;
   current: number | null;
+  /** Live power, for the tile. */
+  power: number | null;
+  /** Bounds of the `charge_current` order (spec 002). */
+  currentMin: number | null;
+  currentMax: number | null;
 }
 
 export interface CarView {
@@ -61,6 +66,20 @@ function values(ctx: RecipeContext, id: string): Map<string, unknown> {
   }
 }
 
+function currentOrderBounds(
+  ctx: RecipeContext,
+  id: string,
+): { min: number | null; max: number | null } {
+  try {
+    const order = (ctx.equipmentManager.getOrderBindingsWithDetails?.(id) ?? []).find(
+      (o) => o.alias === "charge_current",
+    );
+    return { min: order?.min ?? null, max: order?.max ?? null };
+  } catch {
+    return { min: null, max: null };
+  }
+}
+
 function orderAliases(ctx: RecipeContext, id: string): Set<string> {
   try {
     return new Set(
@@ -73,6 +92,7 @@ function orderAliases(ctx: RecipeContext, id: string): Set<string> {
 
 export function readCharger(ctx: RecipeContext, id: string): ChargerView {
   const v = values(ctx, id);
+  const bounds = currentOrderBounds(ctx, id);
   const vehicle = v.get("vehicle");
   return {
     id,
@@ -83,6 +103,9 @@ export function readCharger(ctx: RecipeContext, id: string): ChargerView {
         : null,
     voltage: num(v.get("voltage")),
     current: num(v.get("charge_current")),
+    power: num(v.get("power")),
+    currentMin: bounds.min,
+    currentMax: bounds.max,
   };
 }
 

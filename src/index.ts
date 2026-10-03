@@ -7,6 +7,7 @@
  */
 
 import { ChargerControl } from "./charger.js";
+import { ampsFor, NOMINAL_VOLTAGE, rangeOf, type CurrentRange } from "./current.js";
 import { decide, type Decision, type Mode } from "./decide.js";
 import { I18N, SLOTS } from "./i18n.js";
 import { activeCar, readCar, readCharger, type CarView } from "./inputs.js";
@@ -25,7 +26,6 @@ export const TICK_MS = 60_000;
 export const QUIET_MS = 120_000;
 /** A denied claim is asked again after this long. */
 export const CLAIM_RETRY_MS = 15 * 60_000;
-const NOMINAL_VOLTAGE = 230;
 
 export interface Params {
   chargerId: string;
@@ -34,6 +34,8 @@ export interface Params {
   minSoc: number;
   departure: string;
   current: number;
+  /** Spec 002 — the upper bound of the surplus current. */
+  maxCurrent: number;
 }
 
 function numParam(v: unknown, fallback: number): number {
@@ -57,6 +59,7 @@ export function readParams(p: Record<string, unknown>): Params {
         ? p.departure
         : "07:30",
     current: numParam(p.charge_current, 10),
+    maxCurrent: numParam(p.max_current, 16),
   };
 }
 
@@ -74,6 +77,7 @@ export function summaryOf(
   battery: number | null,
   charging: boolean,
   minSoc: number,
+  amps: number | null = null,
 ): string {
   const pct = battery === null ? "?" : `${Math.round(battery)} %`;
   switch (d.mode) {
@@ -89,7 +93,7 @@ export function summaryOf(
       return `Minimum garanti · ${pct} → ${minSoc} %`;
     case "surplus":
       return charging
-        ? `☀ Surplus · ${pct} → ${d.effectiveTarget} %`
+        ? `☀ Surplus · ${pct} → ${d.effectiveTarget} %${amps !== null && amps > 0 ? ` · ${amps} A` : ""}`
         : `En attente de surplus · ${pct}`;
   }
 }
@@ -139,7 +143,9 @@ class Instance implements RecipeInstanceHandle {
     this.control = new ChargerControl({
       chargerId: p.chargerId,
       dispatch: (id, alias, value) => {
-        if (id === p.chargerId) this.quietUntil = Date.now() + QUIET_MS;
+        // Only a start/stop gives the car a window to react; a current order
+        // must not delay a restart (spec 002 review).
+        if (id === p.chargerId && alias === "state") this.quietUntil = Date.now() + QUIET_MS;
         return ctx.dispatchOrder(id, alias, value);
       },
       log: (m, level) => ctx.log(m, level),
@@ -233,8 +239,11 @@ class Instance implements RecipeInstanceHandle {
   private learn(carId: string): void {
     const car = readCar(this.ctx, carId);
     if (car.battery === null) return;
+    const charger = readCharger(this.ctx, this.p.chargerId);
+    // The rate times the guarantee, which runs at `charge_current`: learn only
+    // at that current, not from surplus charging at 6–16 A (spec 002 review).
     const charging =
-      this.control.owned && readCharger(this.ctx, this.p.chargerId).vehicle === "charging";
+      this.control.owned && charger.vehicle === "charging" && charger.current === this.p.current;
     const key = `rate.${carId}`;
     this.ctx.state.set(
       key,
@@ -242,7 +251,18 @@ class Instance implements RecipeInstanceHandle {
     );
   }
 
-  private ensureClaim(watts: number): void {
+  /** Spec 002 — the range claimed with, and the current the last budget allows. */
+  private range: CurrentRange | null = null;
+  private budgetAmps: number | null = null;
+  /** The current last ordered and not yet seen on the charger. */
+  private sentAmps: number | null = null;
+
+  /** The claim is modulating: the core supports spec 185 and a range was declared. */
+  private modulating(): boolean {
+    return this.range?.modulation != null && typeof this.claim?.budgetW === "function";
+  }
+
+  private ensureClaim(watts: number, range: CurrentRange): void {
     if (this.claim || Date.now() < this.claimRetryAt) return;
     const energy = this.ctx.helpers.energy;
     if (!energy) {
@@ -250,13 +270,28 @@ class Instance implements RecipeInstanceHandle {
       this.ctx.log("Arbitre d'énergie indisponible : charge sur surplus désactivée", "warn");
       return;
     }
+    this.range = range;
+    this.budgetAmps = null;
     this.claim = energy.claimCapacity({
       equipmentId: this.p.chargerId,
       watts,
+      ...(range.modulation
+        ? {
+            modulation: range.modulation,
+            onBudget: (w: number) => {
+              this.budgetAmps = ampsFor(w, range);
+              this.evaluate();
+            },
+          }
+        : {}),
       note: "ev-charge-smart",
       onGranted: () => {
         this.granted = true;
-        this.evaluate();
+        // Core spec 185 calls onBudget right after onGranted (which evaluates
+        // too); deferring this one only avoids a start at the minimum current
+        // followed by a second current order.
+        if (range.modulation) queueMicrotask(() => this.evaluate());
+        else this.evaluate();
       },
       onRevoked: (reason) => {
         this.granted = false;
@@ -286,6 +321,7 @@ class Instance implements RecipeInstanceHandle {
 
   private releaseClaim(): void {
     this.claimRetryAt = 0;
+    this.budgetAmps = null;
     if (!this.claim) return;
     this.claim.reportNeed?.(false);
     this.claim.release();
@@ -354,7 +390,8 @@ class Instance implements RecipeInstanceHandle {
 
       // The claim first: a grant may arrive synchronously and must be decided on.
       const watts = Math.round(this.p.current * (charger.voltage ?? NOMINAL_VOLTAGE));
-      if (!unplugged && charger.vehicle !== null && !this.control.gaveUp) this.ensureClaim(watts);
+      if (!unplugged && charger.vehicle !== null && !this.control.gaveUp)
+        this.ensureClaim(watts, rangeOf(charger, this.p.maxCurrent));
 
       const rate = car ? parseRate(this.ctx.state.get(`rate.${car.id}`)).ratePctPerH : 10;
       const now = new Date();
@@ -387,9 +424,15 @@ class Instance implements RecipeInstanceHandle {
           !this.control.gaveUp &&
           Date.now() > this.quietUntil;
         if (!drawing && canStart) {
+          // Spec 002 FR3 — a surplus start at the budget's current; the
+          // guarantee (and an older core) at the fixed current.
+          const surplusAmps =
+            d.mode === "surplus" && this.modulating()
+              ? (this.budgetAmps ?? this.range?.minA ?? this.p.current)
+              : null;
           this.after(
             this.control.start({
-              current: this.p.current,
+              current: surplusAmps ?? this.p.current,
               currentNow: charger.current,
               wakeCars:
                 active.candidates.length > 0
@@ -408,8 +451,37 @@ class Instance implements RecipeInstanceHandle {
         this.after(this.control.stop(MODE_LABEL[d.mode]));
       }
 
+      // Spec 002 FR2/FR4 — the current of an owned, drawing charge: the
+      // budget's on surplus, the fixed one on the guarantee (a surplus charge
+      // turning into a guarantee must not stay at 6 A).
+      const desired =
+        d.charger !== "run"
+          ? null
+          : d.mode === "surplus" && this.modulating()
+            ? this.budgetAmps
+            : d.mode === "guarantee"
+              ? this.p.current
+              : null;
+      if (charger.current === desired || !this.control.owned) this.sentAmps = null;
+      if (
+        desired !== null &&
+        this.control.owned &&
+        drawing &&
+        !this.control.starting &&
+        charger.current !== desired &&
+        // Sent once per value: the charger confirms in seconds, readings come
+        // every few seconds, and a refused order waits for the next change.
+        this.sentAmps !== desired
+      ) {
+        this.sentAmps = desired;
+        void this.control.setCurrent(desired).then((ok) => {
+          if (!ok)
+            this.ctx.logger.debug({ amps: desired }, "ev-charge-smart: charge current not applied");
+        });
+      }
+
       this.departureCheck(car, now);
-      this.publish(d, car, charger.vehicle === "charging");
+      this.publish(d, car, charger.vehicle === "charging", charger.current);
     } catch (err) {
       this.ctx.logger.error({ err }, "ev-charge-smart evaluation failed");
     }
@@ -432,7 +504,12 @@ class Instance implements RecipeInstanceHandle {
     }
   }
 
-  private publish(d: Decision, car: CarView | null, charging: boolean): void {
+  private publish(
+    d: Decision,
+    car: CarView | null,
+    charging: boolean,
+    amps: number | null = null,
+  ): void {
     if (d.mode !== this.lastMode) {
       this.lastMode = d.mode;
       this.ctx.log(`Mode : ${MODE_LABEL[d.mode]}`);
@@ -442,7 +519,7 @@ class Instance implements RecipeInstanceHandle {
       ? `Terminé · la voiture ne demande plus`
       : this.control.inBackoff() && d.charger === "run"
         ? "Voiture non réveillée · nouvel essai"
-        : summaryOf(d, car?.battery ?? null, charging, this.p.minSoc);
+        : summaryOf(d, car?.battery ?? null, charging, this.p.minSoc, amps);
     if (this.ctx.state.get("summary") !== summary) this.ctx.state.set("summary", summary);
     const activeId = car?.id ?? null;
     if (this.ctx.state.get("active_vehicle") !== activeId)

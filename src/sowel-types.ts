@@ -63,6 +63,8 @@ export interface DataBindingValue {
 
 export interface OrderBindingLike {
   alias: string;
+  min?: number;
+  max?: number;
 }
 
 export interface EquipmentManager {
@@ -88,6 +90,9 @@ export interface CapacityClaimRequest {
   note?: string;
   onGranted: () => void;
   onRevoked: (reason: RevokeReason | string) => void;
+  /** Core spec 185 — ignored by older cores (binary claim at `watts`). */
+  modulation?: { minW: number; maxW: number; stepW: number };
+  onBudget?: (watts: number) => void;
 }
 
 export interface CapacityClaimHandle {
@@ -96,6 +101,8 @@ export interface CapacityClaimHandle {
   deniedReason?: string;
   release(): void;
   reportNeed?(need: boolean): void;
+  /** Core spec 185 — present on cores that support modulating claims. */
+  budgetW?(): number | null;
 }
 
 export interface RecipeTariff {
