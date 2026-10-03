@@ -1,0 +1,18 @@
+{
+  "id": "ev-charge-smart",
+  "type": "recipe",
+  "name": "Smart EV charging",
+  "version": "0.0.0",
+  "description": "Charge an electric vehicle from the solar surplus up to a target, guarantee a minimum by departure from off-peak hours, and wake a sleeping car when the charger refuses to start.",
+  "icon": "BatteryCharging",
+  "repo": "mchacher/sowel-recipe-ev-charge-smart",
+  "author": "mchacher",
+  "tags": ["ev", "charging", "solar", "energy", "automation"],
+  "i18n": {
+    "fr": {
+      "name": "Recharge VE intelligente",
+      "description": "Recharge un véhicule électrique sur le surplus solaire jusqu'à une cible, garantit un minimum avant le départ en heures creuses, et réveille la voiture endormie quand la borne refuse de démarrer."
+    }
+  },
+  "sowelVersion": ">=1.73.0"
+}
