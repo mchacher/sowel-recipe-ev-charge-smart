@@ -5,4 +5,4 @@ All notable changes to this recipe. Versions follow semver; the registry in `mch
 ## Unreleased
 
 - Repository scaffold: recipe skeleton, CI, release workflow, hooks, skills.
-- Spec 001: surplus charging, guaranteed minimum, wake.
+- Spec 001: surplus charging through the arbiter, guaranteed minimum by departure, wake and retry, refresh after a start, manual hold.

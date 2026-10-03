@@ -6,5 +6,6 @@ CI check (`scripts/check-specs-index.sh`) fails a pull request that creates a
 
 Status: 📝 Draft · 🚧 In progress · ✅ Shipped
 
-| #   | Title | Status | Summary |
-| --- | ----- | ------ | ------- |
+| #   | Title                                                      | Status | Summary                                                                                                                                                                                                                                                                                                                                                                                 |
+| --- | ---------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 001 | Smart EV charging: solar surplus, guaranteed minimum, wake | 📝     | One charger, one or more cars: surplus charging through the arbiter (binary claim at a fixed current) up to a target %, the car's own limit honoured; a minimum % guaranteed by a departure time from the grid (off-peak first, then the latest start from a learned %/h); `wake` and retry when the charger refuses a sleeping car; `refresh` after a start; manual hold until unplug. |
