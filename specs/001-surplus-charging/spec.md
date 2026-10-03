@@ -33,14 +33,15 @@ The energy arbiter (spec 140) decides which flexible loads may use the surplus. 
 
 ## Parameters (slots)
 
-| Slot             | Type                               | Required | Default | Meaning                                                                        |
-| ---------------- | ---------------------------------- | -------- | ------- | ------------------------------------------------------------------------------ |
-| `charger`        | equipment `ev_charger`             | yes      | —       | The charger to drive                                                           |
-| `vehicles`       | equipment `electric_vehicle`, list | no       | —       | Cars that charge on it. Without any, the recipe charges on surplus only (no %) |
-| `target_soc`     | number %, 20–100                   | yes      | 80      | Surplus charging stops here (or at the car's own limit, if lower)              |
-| `min_soc`        | number %, 0–100                    | yes      | 30      | Guaranteed by `departure`, from the grid if needed. 0 disables the guarantee   |
-| `departure`      | time                               | yes      | 07:30   | When the minimum must be reached, every day                                    |
-| `charge_current` | number A, 6–32                     | yes      | 10      | The current the charger is set to when the recipe starts it                    |
+| Slot             | Type                               | Required | Default | Meaning                                                                           |
+| ---------------- | ---------------------------------- | -------- | ------- | --------------------------------------------------------------------------------- |
+| `zone`           | zone                               | yes      | current | The zone the instance belongs to (Sowel convention: its Behaviours list shows it) |
+| `charger`        | equipment `ev_charger`             | yes      | —       | The charger to drive                                                              |
+| `vehicles`       | equipment `electric_vehicle`, list | no       | —       | Cars that charge on it. Without any, the recipe charges on surplus only (no %)    |
+| `target_soc`     | number %, 20–100                   | yes      | 80      | Surplus charging stops here (or at the car's own limit, if lower)                 |
+| `min_soc`        | number %, 0–100                    | yes      | 30      | Guaranteed by `departure`, from the grid if needed. 0 disables the guarantee      |
+| `departure`      | time                               | yes      | 07:30   | When the minimum must be reached, every day                                       |
+| `charge_current` | number A, 6–32                     | yes      | 10      | The current the charger is set to when the recipe starts it                       |
 
 Validation: `min_soc` ≤ `target_soc`; the charger exists and is an `ev_charger`; every vehicle is an `electric_vehicle`.
 
