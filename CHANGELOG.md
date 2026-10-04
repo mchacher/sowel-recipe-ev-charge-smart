@@ -2,6 +2,10 @@
 
 All notable changes to this recipe. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
+## v0.1.1
+
+- **A manual OFF hands the charger back** (spec 003). Switching the charger off by hand used to keep the recipe out until the car was unplugged — a night with the guaranteed minimum skipped. Now only a manual ON makes it stand back; a manual OFF lets it act at once, and editing the recipe no longer inherits a past hold.
+
 ## v0.1.0
 
 First release. **Smart EV charging**: one charger (core `ev_charger`), one or more cars (core `electric_vehicle`) — specs 001 and 002, checked live on a dé charger and a Renault Rafale.

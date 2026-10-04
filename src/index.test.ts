@@ -197,6 +197,73 @@ describe("ev-charge-smart instance", () => {
     h.stop();
   });
 
+  it("a person switching the charger OFF hands it back at once (spec 003)", async () => {
+    const w = new FakeWorld().charger().car("rafale", { battery_level: 20 });
+    w.offPeakNow = true; // the guarantee wants to charge
+    const h = start(w);
+    await settle();
+    w.userOrder(true); // a person runs a charge by hand
+    await settle();
+    expect(w.state.get("mode")).toBe("manual");
+    const before = w.ordersTo("state").length;
+    w.userOrder(false); // …and stops it
+    await settle(200_000); // past the 2-min window of the recipe's own earlier start
+    expect(w.state.get("hold")).toBe(false);
+    expect(w.state.get("mode")).toBe("guarantee");
+    expect(w.ordersTo("state").length).toBeGreaterThan(before); // the recipe restarted the charge
+    expect(w.logs.some((l) => /reprend la main/.test(l.message))).toBe(true);
+    h.stop();
+  });
+
+  it("the arbiter's manual-override revoke for a person's OFF does not hold (spec 003)", async () => {
+    const w = new FakeWorld().charger().car("rafale");
+    const h = start(w);
+    await settle();
+    w.grant();
+    await settle();
+    // The real core: the arbiter handles the order first and revokes, then
+    // the recipe sees the order itself.
+    w.revoke("manual-override");
+    w.userOrder(false);
+    await settle();
+    expect(w.state.get("hold")).not.toBe(true);
+    expect(w.state.get("mode")).not.toBe("manual");
+    // Never even briefly held: no "switched on by hand" line for an OFF.
+    expect(w.logs.some((l) => /allumée à la main/.test(l.message))).toBe(false);
+    h.stop();
+  });
+
+  it("a person's ON on a charge the recipe owns: held, and the charge is not stopped", async () => {
+    const w = new FakeWorld().charger().car("rafale");
+    const h = start(w);
+    await settle();
+    w.grant();
+    await settle();
+    expect(states(w)).toEqual([true]);
+    // The real core order: the arbiter revokes, then the recipe sees the order.
+    w.revoke("manual-override");
+    w.userOrder(true);
+    await settle(60_000);
+    expect(w.state.get("mode")).toBe("manual");
+    expect(states(w)).toEqual([true]); // no OFF sent behind the person
+    h.stop();
+  });
+
+  it("a hold survives a restart while the car stays plugged, and is dropped once unplugged (spec 003)", async () => {
+    const w = new FakeWorld().charger({ state: false, vehicle: "connected" }).car("rafale");
+    w.state.set("hold", true); // a charge switched on by hand, car now paused
+    let h = start(w);
+    await settle();
+    expect(w.state.get("mode")).toBe("manual");
+    h.stop();
+    const w2 = new FakeWorld().charger({ state: false, vehicle: "disconnected" }).car("rafale");
+    w2.state.set("hold", true);
+    h = start(w2);
+    await settle();
+    expect(w2.state.get("hold")).toBe(false);
+    h.stop();
+  });
+
   it("a manual-override revoke also holds", async () => {
     const w = new FakeWorld().charger().car("rafale");
     const h = start(w);
@@ -206,6 +273,8 @@ describe("ev-charge-smart instance", () => {
     w.revoke("manual-override");
     await settle();
     expect(w.state.get("mode")).toBe("manual");
+    // The revoke alone never stops the charge it answers (review).
+    expect(states(w)).toEqual([true]);
     h.stop();
   });
 

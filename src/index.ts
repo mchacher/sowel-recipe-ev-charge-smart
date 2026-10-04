@@ -113,8 +113,17 @@ function isHumanSource(source: unknown): boolean {
 interface OrderExecutedEvent {
   equipmentId: string;
   orderAlias: string;
+  value?: unknown;
   source?: unknown;
 }
+
+/** Spec 003 — an order switching the charger off (the plugin's wire values vary). */
+function isOffValue(v: unknown): boolean {
+  return v === false || v === 0 || v === "OFF" || v === "off" || v === "false";
+}
+
+/** How long after a person's OFF a `manual-override` revoke is that same OFF. */
+const MANUAL_OFF_ECHO_MS = 10_000;
 
 class Instance implements RecipeInstanceHandle {
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
@@ -128,6 +137,8 @@ class Instance implements RecipeInstanceHandle {
   private hold: boolean;
   /** After the recipe orders the charger, a car takes a while to draw. */
   private quietUntil = 0;
+  /** Spec 003 — when a person last switched the charger off. */
+  private lastManualOffAt = 0;
   private lastMode: Mode | null = null;
   private lastActiveReason: string | null = null;
   private wasUnplugged = false;
@@ -139,7 +150,13 @@ class Instance implements RecipeInstanceHandle {
     private readonly p: Params,
     private readonly ctx: RecipeContext,
   ) {
-    this.hold = ctx.state.get("hold") === true;
+    // Spec 003 — since a person's OFF now ends the hold, a persisted hold means
+    // a charge switched on by hand and not off since: keep it across a restart
+    // while the car is still plugged (on the dé the car may be paused, so the
+    // `state` reading cannot be the only test). Unplugged: dropped.
+    const plugged = readCharger(ctx, p.chargerId).vehicle;
+    this.hold = ctx.state.get("hold") === true && plugged !== "disconnected" && plugged !== null;
+    if (ctx.state.get("hold") === true && !this.hold) ctx.state.set("hold", false);
     this.control = new ChargerControl({
       chargerId: p.chargerId,
       dispatch: (id, alias, value) => {
@@ -202,7 +219,9 @@ class Instance implements RecipeInstanceHandle {
     if (on) {
       this.control.disown();
       this.setOwned(false);
-      this.ctx.log("Borne pilotée à la main : la recette se met en retrait jusqu'au débranchement");
+      this.ctx.log(
+        "Borne allumée à la main : la recette se met en retrait jusqu'à ce qu'elle soit éteinte ou débranchée",
+      );
     }
     this.ctx.state.set("hold", on);
   }
@@ -216,7 +235,15 @@ class Instance implements RecipeInstanceHandle {
     try {
       if (e.equipmentId !== this.p.chargerId || e.orderAlias !== "state") return;
       if (!isHumanSource(e.source)) return;
-      this.setHold(true);
+      // Spec 003 — a person switching the charger ON runs a charge by hand:
+      // stand back. Switching it OFF ends the manual run: take over at once.
+      if (isOffValue(e.value)) {
+        this.lastManualOffAt = Date.now();
+        if (this.hold) this.ctx.log("Borne éteinte à la main : la recette reprend la main");
+        this.setHold(false);
+      } else {
+        this.setHold(true);
+      }
       this.evaluate();
     } catch (err) {
       this.ctx.logger.error({ err }, "ev-charge-smart order handler failed");
@@ -295,8 +322,18 @@ class Instance implements RecipeInstanceHandle {
       },
       onRevoked: (reason) => {
         this.granted = false;
-        if (reason === "manual-override") this.setHold(true);
-        this.evaluate();
+        // Spec 003 — the arbiter revokes on any person's order, before this
+        // recipe's own order handler sees it: decide once both have run, and
+        // let a person's OFF hand the charger back instead of holding it.
+        if (reason === "manual-override")
+          queueMicrotask(() => {
+            if (this.stopped) return;
+            if (Date.now() - this.lastManualOffAt > MANUAL_OFF_ECHO_MS) this.setHold(true);
+            this.evaluate();
+          });
+        // Not now for manual-override: evaluated before the hold is decided,
+        // it would stop the very charge a person just switched on (review).
+        else this.evaluate();
       },
     });
     if (this.claim.status() === "denied") {
