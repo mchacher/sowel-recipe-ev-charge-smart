@@ -233,13 +233,34 @@ describe("ev-charge-smart instance", () => {
     h.stop();
   });
 
-  it("a hold is not inherited by a restart when nothing runs by hand (spec 003)", async () => {
-    const w = new FakeWorld().charger({ state: false, vehicle: "connected" }).car("rafale");
-    w.state.set("hold", true); // left over from before the restart
+  it("a person's ON on a charge the recipe owns: held, and the charge is not stopped", async () => {
+    const w = new FakeWorld().charger().car("rafale");
     const h = start(w);
     await settle();
-    expect(w.state.get("hold")).toBe(false);
-    expect(w.state.get("mode")).not.toBe("manual");
+    w.grant();
+    await settle();
+    expect(states(w)).toEqual([true]);
+    // The real core order: the arbiter revokes, then the recipe sees the order.
+    w.revoke("manual-override");
+    w.userOrder(true);
+    await settle(60_000);
+    expect(w.state.get("mode")).toBe("manual");
+    expect(states(w)).toEqual([true]); // no OFF sent behind the person
+    h.stop();
+  });
+
+  it("a hold survives a restart while the car stays plugged, and is dropped once unplugged (spec 003)", async () => {
+    const w = new FakeWorld().charger({ state: false, vehicle: "connected" }).car("rafale");
+    w.state.set("hold", true); // a charge switched on by hand, car now paused
+    let h = start(w);
+    await settle();
+    expect(w.state.get("mode")).toBe("manual");
+    h.stop();
+    const w2 = new FakeWorld().charger({ state: false, vehicle: "disconnected" }).car("rafale");
+    w2.state.set("hold", true);
+    h = start(w2);
+    await settle();
+    expect(w2.state.get("hold")).toBe(false);
     h.stop();
   });
 
@@ -252,6 +273,8 @@ describe("ev-charge-smart instance", () => {
     w.revoke("manual-override");
     await settle();
     expect(w.state.get("mode")).toBe("manual");
+    // The revoke alone never stops the charge it answers (review).
+    expect(states(w)).toEqual([true]);
     h.stop();
   });
 

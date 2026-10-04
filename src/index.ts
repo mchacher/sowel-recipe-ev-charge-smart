@@ -150,11 +150,13 @@ class Instance implements RecipeInstanceHandle {
     private readonly p: Params,
     private readonly ctx: RecipeContext,
   ) {
-    // Spec 003 — a hold is not inherited: a restart (core restart, or the
-    // recipe edited by the user) holds only if a charge it did not start is
-    // running right now (below).
-    this.hold = false;
-    if (ctx.state.get("hold") === true) ctx.state.set("hold", false);
+    // Spec 003 — since a person's OFF now ends the hold, a persisted hold means
+    // a charge switched on by hand and not off since: keep it across a restart
+    // while the car is still plugged (on the dé the car may be paused, so the
+    // `state` reading cannot be the only test). Unplugged: dropped.
+    const plugged = readCharger(ctx, p.chargerId).vehicle;
+    this.hold = ctx.state.get("hold") === true && plugged !== "disconnected" && plugged !== null;
+    if (ctx.state.get("hold") === true && !this.hold) ctx.state.set("hold", false);
     this.control = new ChargerControl({
       chargerId: p.chargerId,
       dispatch: (id, alias, value) => {
@@ -329,7 +331,9 @@ class Instance implements RecipeInstanceHandle {
             if (Date.now() - this.lastManualOffAt > MANUAL_OFF_ECHO_MS) this.setHold(true);
             this.evaluate();
           });
-        this.evaluate();
+        // Not now for manual-override: evaluated before the hold is decided,
+        // it would stop the very charge a person just switched on (review).
+        else this.evaluate();
       },
     });
     if (this.claim.status() === "denied") {

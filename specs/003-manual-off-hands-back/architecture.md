@@ -4,4 +4,5 @@
 
 - `onOrder`: the order's `value` decides — OFF (`false`, `0`, `"OFF"`, `"off"`) clears the hold and records `lastManualOffAt`; anything else holds.
 - `onRevoked("manual-override")`: deferred with `queueMicrotask` — the event bus is synchronous and the arbiter subscribed first, so the recipe's own order handler has run by then; holds only if no person's OFF was seen in the last 10 s.
-- Constructor: `hold` starts false and a persisted `hold` is cleared; the existing "charger drawing, not owned → hold" rule is the only way a restart holds.
+- `onRevoked("manual-override")` does not evaluate synchronously (it would stop the charge a person just switched on).
+- Constructor: a persisted `hold` is kept while the charger reads a vehicle connected; the "charger drawing, not owned → hold" rule still applies.
