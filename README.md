@@ -5,7 +5,7 @@ Smart EV charging for [Sowel](https://docs.sowel.org): one charger (core `ev_cha
 - Charges from the **solar surplus** through Sowel's energy arbiter, up to a target battery level (the car's own limit is honoured). On a core with modulating claims (spec 185) the charging current follows the surplus, 1 A at a time, between the charger's minimum and a maximum you set.
 - Guarantees a **minimum battery level by a departure time**, from off-peak hours first.
 - **Wakes a sleeping car** when the charger refuses to start, and refreshes the car's data after a start.
-- Leaves a charge switched by hand alone until the car is unplugged.
+- Leaves a charge switched on by hand alone; switching the charger off by hand (or unplugging) hands it back to the recipe at once.
 
 ## Parameters
 

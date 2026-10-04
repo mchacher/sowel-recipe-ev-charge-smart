@@ -197,6 +197,52 @@ describe("ev-charge-smart instance", () => {
     h.stop();
   });
 
+  it("a person switching the charger OFF hands it back at once (spec 003)", async () => {
+    const w = new FakeWorld().charger().car("rafale", { battery_level: 20 });
+    w.offPeakNow = true; // the guarantee wants to charge
+    const h = start(w);
+    await settle();
+    w.userOrder(true); // a person runs a charge by hand
+    await settle();
+    expect(w.state.get("mode")).toBe("manual");
+    const before = w.ordersTo("state").length;
+    w.userOrder(false); // …and stops it
+    await settle(200_000); // past the 2-min window of the recipe's own earlier start
+    expect(w.state.get("hold")).toBe(false);
+    expect(w.state.get("mode")).toBe("guarantee");
+    expect(w.ordersTo("state").length).toBeGreaterThan(before); // the recipe restarted the charge
+    expect(w.logs.some((l) => /reprend la main/.test(l.message))).toBe(true);
+    h.stop();
+  });
+
+  it("the arbiter's manual-override revoke for a person's OFF does not hold (spec 003)", async () => {
+    const w = new FakeWorld().charger().car("rafale");
+    const h = start(w);
+    await settle();
+    w.grant();
+    await settle();
+    // The real core: the arbiter handles the order first and revokes, then
+    // the recipe sees the order itself.
+    w.revoke("manual-override");
+    w.userOrder(false);
+    await settle();
+    expect(w.state.get("hold")).not.toBe(true);
+    expect(w.state.get("mode")).not.toBe("manual");
+    // Never even briefly held: no "switched on by hand" line for an OFF.
+    expect(w.logs.some((l) => /allumée à la main/.test(l.message))).toBe(false);
+    h.stop();
+  });
+
+  it("a hold is not inherited by a restart when nothing runs by hand (spec 003)", async () => {
+    const w = new FakeWorld().charger({ state: false, vehicle: "connected" }).car("rafale");
+    w.state.set("hold", true); // left over from before the restart
+    const h = start(w);
+    await settle();
+    expect(w.state.get("hold")).toBe(false);
+    expect(w.state.get("mode")).not.toBe("manual");
+    h.stop();
+  });
+
   it("a manual-override revoke also holds", async () => {
     const w = new FakeWorld().charger().car("rafale");
     const h = start(w);

@@ -21,7 +21,7 @@ The energy arbiter (spec 140) decides which flexible loads may use the surplus. 
 2. **Guarantee a minimum battery level by a departure time** (default 30 % by 07:30): below it, charge from the grid — off-peak hours first, then whatever time is left.
 3. **Wake a sleeping car** when the charger refuses to start, and **refresh** the car's data after a start.
 4. Serve **several cars on one charger**: the recipe works out which one is plugged.
-5. Never fight the user: a charge switched by hand is left alone until the car is unplugged.
+5. Never fight the user: a charge switched on by hand is left alone until it is switched off or the car is unplugged (spec 003).
 
 ## Non-goals
 
@@ -68,7 +68,7 @@ Validation: `min_soc` ≤ `target_soc`; the charger exists and is an `ev_charger
 - **FR11 — Wake.** If `state` on fails (`{success:false}` — a sleeping car makes the charger refuse) and a candidate car has `wake` bound: `wake` every candidate, wait 30 s, retry `state` on. At most two wakes per start. Still failing: no new start for 15 min (the need reported to the arbiter drops meanwhile). A second failed start in the same plug-in session means the car wants no more (full at its own limit, or scheduled): the recipe gives up until the car is unplugged (mode `done`), and sets `alert` only when the guaranteed minimum is at stake. A thrown dispatch (integration unavailable) is not followed by a wake.
 - **FR11b — Car stopping by itself.** On the dé, the charger's `state` reads "the car is drawing" and drops by itself when the car pauses, sleeps or completes. While the decision is to run, a charge that stopped drawing is restarted (with FR11's wake) once the 2-min window after the recipe's last order has passed.
 - **FR12 — Stop.** `state` off, only when the recipe started the charge.
-- **FR13 — Manual hold.** A person switches the charger — an `equipment.order.executed` on its `state` with a manual, button, shared-access or external source (not the delivery-retry channel) — or the arbiter revokes with `manual-override`: the recipe stops acting on the charger until it reads `vehicle` = `disconnected` (FR4). The charger's `state` reading is never used for this: it follows the car's draw. A switch on the charger's own buttons is not seen (it sends no Sowel order).
+- **FR13 — Manual hold.** A person switching the charger **ON** — an `equipment.order.executed` on its `state` with a manual, button, shared-access or external source (not the delivery-retry channel) — or the arbiter revoking with `manual-override`: the recipe stops acting on the charger. A person switching it **OFF** hands it back at once, and unplugging ends the hold too (amended by spec 003; it used to last until unplug). The charger's `state` reading is never used for this: it follows the car's draw. A switch on the charger's own buttons is not seen (it sends no Sowel order).
 
 ### Visibility
 
