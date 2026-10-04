@@ -122,9 +122,6 @@ function isOffValue(v: unknown): boolean {
   return v === false || v === 0 || v === "OFF" || v === "off" || v === "false";
 }
 
-/** How long after a person's OFF a `manual-override` revoke is that same OFF. */
-const MANUAL_OFF_ECHO_MS = 10_000;
-
 class Instance implements RecipeInstanceHandle {
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private readonly unsubscribers: (() => void)[] = [];
@@ -137,8 +134,6 @@ class Instance implements RecipeInstanceHandle {
   private hold: boolean;
   /** After the recipe orders the charger, a car takes a while to draw. */
   private quietUntil = 0;
-  /** Spec 003 — when a person last switched the charger off. */
-  private lastManualOffAt = 0;
   private lastMode: Mode | null = null;
   private lastActiveReason: string | null = null;
   private wasUnplugged = false;
@@ -238,7 +233,6 @@ class Instance implements RecipeInstanceHandle {
       // Spec 003 — a person switching the charger ON runs a charge by hand:
       // stand back. Switching it OFF ends the manual run: take over at once.
       if (isOffValue(e.value)) {
-        this.lastManualOffAt = Date.now();
         if (this.hold) this.ctx.log("Borne éteinte à la main : la recette reprend la main");
         this.setHold(false);
       } else {
@@ -322,17 +316,12 @@ class Instance implements RecipeInstanceHandle {
       },
       onRevoked: (reason) => {
         this.granted = false;
-        // Spec 003 — the arbiter revokes on any person's order, before this
-        // recipe's own order handler sees it: decide once both have run, and
-        // let a person's OFF hand the charger back instead of holding it.
-        if (reason === "manual-override")
-          queueMicrotask(() => {
-            if (this.stopped) return;
-            if (Date.now() - this.lastManualOffAt > MANUAL_OFF_ECHO_MS) this.setHold(true);
-            this.evaluate();
-          });
-        // Not now for manual-override: evaluated before the hold is decided,
-        // it would stop the very charge a person just switched on (review).
+        // Spec 004 — a manual-override revoke is not a person: the arbiter
+        // also raises it on its own inferences (a "wall switch" read from a
+        // charger whose state follows the car). People are seen through their
+        // orders (onOrder). Evaluated after the order handlers of the same
+        // event, so it never stops a charge a person has just switched on.
+        if (reason === "manual-override") queueMicrotask(() => this.evaluate());
         else this.evaluate();
       },
     });
