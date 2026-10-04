@@ -264,17 +264,16 @@ describe("ev-charge-smart instance", () => {
     h.stop();
   });
 
-  it("a manual-override revoke also holds", async () => {
+  it("a manual-override revoke alone does not hold, and stops nothing (spec 004)", async () => {
     const w = new FakeWorld().charger().car("rafale");
     const h = start(w);
     await settle();
     w.grant();
     await settle();
-    w.revoke("manual-override");
+    w.revoke("manual-override"); // the arbiter's own inference, no person's order
     await settle();
-    expect(w.state.get("mode")).toBe("manual");
-    // The revoke alone never stops the charge it answers (review).
-    expect(states(w)).toEqual([true]);
+    expect(w.state.get("hold")).not.toBe(true);
+    expect(w.state.get("mode")).not.toBe("manual");
     h.stop();
   });
 

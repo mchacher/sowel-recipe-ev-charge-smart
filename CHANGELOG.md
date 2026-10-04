@@ -2,6 +2,10 @@
 
 All notable changes to this recipe. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
+## v0.1.2
+
+- **The arbiter taking the charger back is not a person** (spec 004). A `manual-override` revoke from the arbiter no longer puts the recipe in manual mode; only your ON order does. With a sleeping car, the arbiter used to read the charger as switched off at a wall switch, and the recipe then stood back for no reason.
+
 ## v0.1.1
 
 - **A manual OFF hands the charger back** (spec 003). Switching the charger off by hand used to keep the recipe out until the car was unplugged — a night with the guaranteed minimum skipped. Now only a manual ON makes it stand back; a manual OFF lets it act at once, and editing the recipe no longer inherits a past hold.
