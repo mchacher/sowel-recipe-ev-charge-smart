@@ -1,6 +1,6 @@
 {
   "name": "sowel-recipe-ev-charge-smart",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Sowel recipe: charge an electric vehicle from solar surplus through the energy arbiter, with an off-peak guarantee and a battery target",
   "type": "module",
   "main": "dist/index.js",
