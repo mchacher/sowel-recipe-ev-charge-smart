@@ -406,7 +406,7 @@ describe("ev-charge-smart instance", () => {
     h.stop();
   });
 
-  it("the guarantee keeps its fixed current whatever the budget (FR4)", async () => {
+  it("the guarantee takes a larger budget's current (spec 005 AC1)", async () => {
     const w = new FakeWorld().charger({ charge_current: 16 }).car("rafale", { battery_level: 20 });
     w.offPeakNow = true;
     const h = start(w, { ...PARAMS, charge_current: 10, max_current: 16 });
@@ -415,6 +415,62 @@ describe("ev-charge-smart instance", () => {
     expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([10]);
     w.grant();
     w.budget(3680);
+    await settle();
+    expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([10, 16]);
+    h.stop();
+  });
+
+  it("the guarantee never goes below its fixed current (spec 005 AC2)", async () => {
+    const w = new FakeWorld().charger({ charge_current: 16 }).car("rafale", { battery_level: 20 });
+    w.offPeakNow = true;
+    const h = start(w, { ...PARAMS, charge_current: 10, max_current: 16 });
+    await settle();
+    w.grant();
+    w.budget(1380);
+    await settle();
+    expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([10]);
+    h.stop();
+  });
+
+  it("a revoke brings the guarantee back to its fixed current, still charging (spec 005 AC3)", async () => {
+    const w = new FakeWorld().charger({ charge_current: 16 }).car("rafale", { battery_level: 20 });
+    w.offPeakNow = true;
+    const h = start(w, { ...PARAMS, charge_current: 10, max_current: 16 });
+    await settle();
+    w.grant();
+    w.budget(3680);
+    await settle();
+    w.revoke();
+    await settle();
+    expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([10, 16, 10]);
+    expect(w.equipments.get("charger")!.data.state).toBe(true);
+    expect(w.state.get("mode")).toBe("guarantee");
+    h.stop();
+  });
+
+  it("a guarantee restart while granted starts at the budget's current (spec 005 AC4)", async () => {
+    const w = new FakeWorld().charger({ charge_current: 16 }).car("rafale", { battery_level: 20 });
+    w.offPeakNow = true;
+    const h = start(w, { ...PARAMS, charge_current: 10, max_current: 16 });
+    await settle();
+    w.grant();
+    w.budget(2990);
+    await settle(150_000); // past the start's quiet window
+    w.carStops();
+    await settle(61_000);
+    expect(w.ordersTo("state").map((o) => o.value)).toEqual([true, true]);
+    expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([10, 13]);
+    expect(w.equipments.get("charger")!.data.charge_current).toBe(13);
+    h.stop();
+  });
+
+  it("the guarantee on an older core (no budgetW) keeps its fixed current", async () => {
+    const w = new FakeWorld().charger({ charge_current: 16 }).car("rafale", { battery_level: 20 });
+    w.core185 = false;
+    w.offPeakNow = true;
+    const h = start(w, { ...PARAMS, charge_current: 10, max_current: 16 });
+    await settle();
+    w.grant();
     await settle();
     expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([10]);
     h.stop();

@@ -16,16 +16,16 @@ Spec 001 claims the surplus at one fixed current (`charge_current`, default 10 A
 
 ## Non-goals
 
-- Changing the current in guarantee mode with the surplus (a later option).
+- Changing the current in guarantee mode with the surplus (a later option — done by spec 005).
 - Three-phase chargers.
 
 ## Functional requirements
 
 - **FR1 — Range.** The claim carries `modulation: { minW: minA·V, maxW: maxA·V, stepW: V }`, where `V` is the charger's measured voltage (else 230 V), `minA` the `charge_current` order's minimum (else 6), `maxA` = min(the order's maximum (else 16), the new `max_current` slot). `watts` stays `charge_current·V` for cores that ignore `modulation`. An invalid range (max < min) falls back to a binary claim.
 - **FR2 — Budget → current.** On `onBudget(w)`: `amps = clamp(floor(w / V), minA, maxA)`. While the recipe owns a surplus charge, the charger's current is set to it when it differs (no log line per change — FR15 of spec 001: debug only).
-- **FR3 — Start.** A surplus start uses the budget current (else `minA`); a guarantee start uses `charge_current`, as in spec 001.
-- **FR4 — Guarantee keeps its current.** In guarantee mode a budget change does not touch the current.
-- **FR4b — Guarantee current.** An owned charge in guarantee mode is set to `charge_current` if it runs at another current (a surplus charge turning into a guarantee). The claim stays open and modulating meanwhile, so the core may journal `watts-divergence` / `budget-not-honored` and count the excess over the budget as background: that is what grid charging is, and it keeps the arbiter's books right.
+- **FR3 — Start.** A surplus start uses the budget current (else `minA`); a guarantee start uses `charge_current`, as in spec 001 (spec 005: the larger of `charge_current` and the budget current while granted).
+- **FR4 — Guarantee keeps its current.** In guarantee mode a budget change does not touch the current. _Amended by spec 005: the guarantee runs at the larger of `charge_current` and the budget current while the claim is granted._
+- **FR4b — Guarantee current.** An owned charge in guarantee mode is set to `charge_current` (spec 005: or the larger budget current) if it runs at another current (a surplus charge turning into a guarantee). The claim stays open and modulating meanwhile, so the core may journal `watts-divergence` / `budget-not-honored` and count the excess over the budget as background: that is what grid charging is, and it keeps the arbiter's books right.
 - **FR4c — Learned rate.** The charge rate (spec 001 FR8) is learned only while the charger runs at `charge_current`: it times the guarantee, which runs at that current.
 - **FR4d — One order per value.** A current is ordered once per value; it is sent again only when the wanted current changes (the dé confirms in 1–8 s while readings arrive every few seconds). Current orders do not extend the start window (spec 001 FR11b).
 - **FR5 — New slot.** `max_current` (A, 6–32, default 16): the upper bound in surplus mode.
@@ -34,7 +34,7 @@ Spec 001 claims the surplus at one fixed current (`charge_current`, default 10 A
 ## Acceptance criteria
 
 - [x] AC1 — Budget 2990 W at 230 V → current 13 A; 1380 → 6 A; 5000 → max.
-- [x] AC2 — A budget change while charging on surplus sets `charge_current`; in guarantee mode it does not.
+- [x] AC2 — A budget change while charging on surplus sets `charge_current`; in guarantee mode it does not (superseded by spec 005).
 - [x] AC3 — A surplus start uses the budget current.
 - [x] AC4 — With no `budgetW` on the handle (older core), behaviour is spec 001's.
 - [ ] AC5 — Live: the current follows the surplus on a sunny day (owner's installation).
