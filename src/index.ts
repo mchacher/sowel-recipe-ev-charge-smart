@@ -278,6 +278,16 @@ class Instance implements RecipeInstanceHandle {
   /** The current last ordered and not yet seen on the charger. */
   private sentAmps: number | null = null;
 
+  /**
+   * Spec 005 — the guarantee's current: the larger of `charge_current` and the
+   * budget's, while a modulating claim is granted; never below `charge_current`.
+   */
+  private guaranteeAmps(): number {
+    return this.granted && this.modulating() && this.budgetAmps !== null
+      ? Math.max(this.p.current, this.budgetAmps)
+      : this.p.current;
+  }
+
   /** The claim is modulating: the core supports spec 185 and a range was declared. */
   private modulating(): boolean {
     return this.range?.modulation != null && typeof this.claim?.budgetW === "function";
@@ -451,14 +461,17 @@ class Instance implements RecipeInstanceHandle {
           Date.now() > this.quietUntil;
         if (!drawing && canStart) {
           // Spec 002 FR3 — a surplus start at the budget's current; the
-          // guarantee (and an older core) at the fixed current.
-          const surplusAmps =
+          // guarantee at the larger of the fixed one and the budget's (spec 005);
+          // an older core at the fixed current.
+          const startAmps =
             d.mode === "surplus" && this.modulating()
               ? (this.budgetAmps ?? this.range?.minA ?? this.p.current)
-              : null;
+              : d.mode === "guarantee"
+                ? this.guaranteeAmps()
+                : this.p.current;
           this.after(
             this.control.start({
-              current: surplusAmps ?? this.p.current,
+              current: startAmps,
               currentNow: charger.current,
               wakeCars:
                 active.candidates.length > 0
@@ -477,16 +490,17 @@ class Instance implements RecipeInstanceHandle {
         this.after(this.control.stop(MODE_LABEL[d.mode]));
       }
 
-      // Spec 002 FR2/FR4 — the current of an owned, drawing charge: the
-      // budget's on surplus, the fixed one on the guarantee (a surplus charge
-      // turning into a guarantee must not stay at 6 A).
+      // Spec 002 FR2/FR4, spec 005 — the current of an owned, drawing charge:
+      // the budget's on surplus; on the guarantee the larger of the fixed one
+      // and the budget's (a surplus charge turning into a guarantee must not
+      // stay at 6 A, nor drop below the surplus it was given).
       const desired =
         d.charger !== "run"
           ? null
           : d.mode === "surplus" && this.modulating()
             ? this.budgetAmps
             : d.mode === "guarantee"
-              ? this.p.current
+              ? this.guaranteeAmps()
               : null;
       if (charger.current === desired || !this.control.owned) this.sentAmps = null;
       if (
