@@ -2,6 +2,10 @@
 
 All notable changes to this recipe. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
+## v0.1.3
+
+- **The guaranteed minimum takes the surplus when it is larger** (spec 005). During the guarantee (for instance in an afternoon off-peak slot) the charger used to stay at `charge_current` even when the sun offered more; the surplus was exported. It now charges at the larger of `charge_current` and the current the surplus allows, and never below `charge_current`.
+
 ## v0.1.2
 
 - **The arbiter taking the charger back is not a person** (spec 004). A `manual-override` revoke from the arbiter no longer puts the recipe in manual mode; only your ON order does. With a sleeping car, the arbiter used to read the charger as switched off at a wall switch, and the recipe then stood back for no reason.
