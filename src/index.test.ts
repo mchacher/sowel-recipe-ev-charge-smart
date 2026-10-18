@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createRecipe, readParams } from "./index.js";
+import { ADOPT_DELAY_MS, createRecipe, readParams } from "./index.js";
 import { FakeWorld } from "./testing/ctx.testing.js";
 
 const PARAMS = {
@@ -332,7 +332,7 @@ describe("ev-charge-smart instance", () => {
     h.stop();
   });
 
-  it("restart with ownership keeps it; without, a running charge is manual", async () => {
+  it("restart with ownership keeps it; without, a running charge is adopted (spec 006 FR2)", async () => {
     const w = new FakeWorld().charger({ state: true, vehicle: "charging" }).car("rafale");
     w.state.set("owned", true);
     w.grantOnClaim = true;
@@ -344,8 +344,11 @@ describe("ev-charge-smart instance", () => {
     const w2 = new FakeWorld().charger({ state: true, vehicle: "charging" }).car("rafale");
     h = start(w2);
     await settle();
-    expect(w2.state.get("mode")).toBe("manual");
-    expect(w2.orders).toHaveLength(0);
+    expect(w2.state.get("mode")).toBe("surplus");
+    expect(w2.orders).toHaveLength(0); // within the adoption delay
+    await settle(ADOPT_DELAY_MS);
+    expect(states(w2)).toEqual([false]); // adopted, no surplus: stopped (AC5)
+    expect(w2.state.get("owned")).toBe(false);
     h.stop();
   });
 
@@ -588,5 +591,218 @@ describe("ev-charge-smart instance", () => {
     w.userOrder(true);
     await settle(10 * 60_000);
     expect(w.orders.length).toBe(before);
+  });
+});
+
+describe("spec 006 — the charger's own starts, night off-peak at max current", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 17, 19, 14, 0));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const adopted = (w: FakeWorld) => w.logs.filter((l) => /prend en main/.test(l.message));
+  const amps = (w: FakeWorld) => w.ordersTo("charge_current").map((o) => o.value);
+
+  it("a charge the charger starts by itself on plug-in is adopted and stopped without surplus (AC1)", async () => {
+    const w = new FakeWorld().charger({ vehicle: "disconnected" }).car("rafale");
+    const h = start(w);
+    await settle();
+    w.plugInAutoStart();
+    await settle();
+    expect(w.ordersTo("state")).toHaveLength(0); // not before the delay
+    await settle(ADOPT_DELAY_MS);
+    expect(states(w)).toEqual([false]);
+    expect(adopted(w)).toHaveLength(1);
+    expect(w.state.get("mode")).toBe("surplus");
+    h.stop();
+  });
+
+  it("adopted at or above the target: stopped, done (AC2)", async () => {
+    const w = new FakeWorld()
+      .charger({ vehicle: "disconnected" })
+      .car("rafale", { battery_level: 85 });
+    const h = start(w);
+    await settle();
+    w.plugInAutoStart();
+    await settle(ADOPT_DELAY_MS + 1_000);
+    expect(states(w)).toEqual([false]);
+    expect(w.state.get("mode")).toBe("done");
+    h.stop();
+  });
+
+  it("below the minimum at night off-peak: kept and moved to max_current (AC3)", async () => {
+    const w = new FakeWorld()
+      .charger({ vehicle: "disconnected", charge_current: 6 })
+      .car("rafale", { battery_level: 20 });
+    w.offPeakNow = true;
+    w.isDaylight = false;
+    const h = start(w, { ...PARAMS, max_current: 16 });
+    await settle();
+    w.plugInAutoStart();
+    await settle(ADOPT_DELAY_MS + 1_000);
+    expect(w.ordersTo("state")).toHaveLength(0);
+    expect(amps(w)).toEqual([16]);
+    expect(w.state.get("mode")).toBe("guarantee");
+    h.stop();
+  });
+
+  it("a person's ON through Sowel still holds and is never stopped (AC4)", async () => {
+    const w = new FakeWorld().charger().car("rafale");
+    const h = start(w);
+    await settle();
+    w.userOrder(true);
+    await settle(ADOPT_DELAY_MS * 4);
+    expect(w.ordersTo("state")).toHaveLength(0);
+    expect(w.state.get("mode")).toBe("manual");
+    expect(adopted(w)).toHaveLength(0);
+    h.stop();
+  });
+
+  it("a person's ON whose reading precedes the order event: held, not stopped (AC12)", async () => {
+    const w = new FakeWorld().charger().car("rafale");
+    const h = start(w);
+    await settle();
+    w.set("charger", "vehicle", "charging");
+    w.set("charger", "state", true);
+    await settle(10_000); // the plugin verifies the write, then the core emits the event
+    w.userOrderEvent(true);
+    await settle(ADOPT_DELAY_MS * 4);
+    expect(w.ordersTo("state")).toHaveLength(0);
+    expect(w.state.get("mode")).toBe("manual");
+    h.stop();
+  });
+
+  it("a draw that stops within the delay adopts nothing", async () => {
+    const w = new FakeWorld().charger({ vehicle: "disconnected" }).car("rafale");
+    const h = start(w);
+    await settle();
+    w.plugInAutoStart();
+    await settle(20_000);
+    w.carStops();
+    await settle(2 * 60_000);
+    expect(w.ordersTo("state")).toHaveLength(0);
+    expect(adopted(w)).toHaveLength(0);
+    h.stop();
+  });
+
+  it("the recipe's own stop, reading still true within the quiet window: not re-adopted", async () => {
+    const w = new FakeWorld().charger().car("rafale");
+    w.answer = (c) => (c.alias === "state" && c.value === false ? { success: true } : undefined);
+    const h = start(w);
+    await settle();
+    w.grant();
+    await settle();
+    w.revoke();
+    await settle(60_000); // stop accepted, the reading still says drawing: past the delay, inside the quiet window
+    w.carStops();
+    await settle(5 * 60_000);
+    expect(states(w)).toEqual([true, false]);
+    expect(adopted(w)).toHaveLength(0);
+    h.stop();
+  });
+
+  it("a charge drawing while the recipe's start is in progress is not adopted", async () => {
+    const w = new FakeWorld().charger().car("rafale");
+    w.car_ = "asleep";
+    const h = start(w);
+    await settle();
+    w.grant();
+    await settle(); // refused, wake sent, waiting 30 s before the retry
+    w.set("charger", "state", true); // the car wakes and draws before the retry
+    w.set("charger", "vehicle", "charging");
+    await settle(ADOPT_DELAY_MS + 15_000);
+    expect(adopted(w)).toHaveLength(0);
+    h.stop();
+  });
+
+  it("a guarantee start at night off-peak runs at max_current (AC6)", async () => {
+    const w = new FakeWorld().charger().car("rafale", { battery_level: 20 });
+    w.offPeakNow = true;
+    w.isDaylight = false;
+    const h = start(w, { ...PARAMS, max_current: 16 });
+    await settle();
+    expect(states(w)).toEqual([true]);
+    expect(amps(w)).toEqual([16]);
+    h.stop();
+  });
+
+  it("an off-peak guarantee in daylight keeps spec 005's current (AC7)", async () => {
+    const w = new FakeWorld().charger({ charge_current: 16 }).car("rafale", { battery_level: 20 });
+    w.offPeakNow = true;
+    w.isDaylight = true;
+    const h = start(w, { ...PARAMS, max_current: 16 });
+    await settle();
+    expect(amps(w)).toEqual([10]);
+    h.stop();
+  });
+
+  it("a peak-hour guarantee at night runs at charge_current (AC8)", async () => {
+    const w = new FakeWorld().charger({ charge_current: 16 }).car("rafale", { battery_level: 20 });
+    w.offPeakNow = false;
+    w.isDaylight = false;
+    const h = start(w, { ...PARAMS, departure: "20:00", max_current: 16 });
+    await settle();
+    expect(w.state.get("mode")).toBe("guarantee");
+    expect(amps(w)).toEqual([10]);
+    h.stop();
+  });
+
+  it("unknown daylight or an older core is not night (AC9)", async () => {
+    for (const isDaylight of [null, "absent"] as const) {
+      const w = new FakeWorld()
+        .charger({ charge_current: 16 })
+        .car("rafale", { battery_level: 20 });
+      w.offPeakNow = true;
+      w.isDaylight = isDaylight;
+      const h = start(w, { ...PARAMS, max_current: 16 });
+      await settle();
+      expect(amps(w)).toEqual([10]);
+      h.stop();
+    }
+  });
+
+  it("night off-peak ends: back to charge_current, still charging (AC10)", async () => {
+    const w = new FakeWorld().charger().car("rafale", { battery_level: 20 });
+    w.offPeakNow = true;
+    w.isDaylight = false;
+    const h = start(w, { ...PARAMS, departure: "20:00", max_current: 16 });
+    await settle();
+    expect(amps(w)).toEqual([16]);
+    w.offPeakNow = false;
+    await settle(61_000);
+    expect(amps(w)).toEqual([16, 10]);
+    expect(w.equipments.get("charger")!.data.state).toBe(true);
+    expect(w.state.get("mode")).toBe("guarantee");
+    h.stop();
+  });
+
+  it("max_current below charge_current: never below the fixed current", async () => {
+    const w = new FakeWorld().charger({ charge_current: 16 }).car("rafale", { battery_level: 20 });
+    w.offPeakNow = true;
+    w.isDaylight = false;
+    const h = start(w, { ...PARAMS, max_current: 8 });
+    await settle();
+    expect(amps(w)).toEqual([10]);
+    h.stop();
+  });
+
+  it("done opens no claim, tick after tick (AC11)", async () => {
+    const w = new FakeWorld().charger().car("rafale", { battery_level: 85 });
+    const h = start(w);
+    await settle(10 * 60_000);
+    expect(w.state.get("mode")).toBe("done");
+    expect(w.claims).toHaveLength(0);
+    h.stop();
+  });
+
+  it("the current slots carry the spec 006 labels (AC13)", () => {
+    const r = createRecipe();
+    const slot = (id: string) => r.slots.find((s) => s.id === id)!;
+    expect(slot("charge_current").name).toBe("Guaranteed minimum current (A)");
+    expect(slot("max_current").name).toBe("Maximum current (A)");
+    const fr = r.i18n!.fr.slots!;
+    expect(fr.charge_current.name).toBe("Courant du minimum garanti (A)");
+    expect(fr.max_current.name).toBe("Courant maximal (A)");
   });
 });

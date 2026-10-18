@@ -138,6 +138,8 @@ export interface RecipeContext {
   log(message: string, level?: "info" | "warn" | "error"): void;
   helpers: {
     getTariff?(): RecipeTariff;
+    /** Core spec 126 — daylight with the home's offsets; null fields when not computed. */
+    getSunlight?(): { sunrise: string | null; sunset: string | null; isDaylight: boolean | null };
     energy?: {
       claimCapacity(req: CapacityClaimRequest): CapacityClaimHandle;
     };

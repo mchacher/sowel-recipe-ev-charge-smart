@@ -6,18 +6,20 @@ Smart EV charging for [Sowel](https://docs.sowel.org): one charger (core `ev_cha
 - Guarantees a **minimum battery level by a departure time**, from off-peak hours first.
 - **Wakes a sleeping car** when the charger refuses to start, and refreshes the car's data after a start.
 - Leaves a charge switched on by hand alone; switching the charger off by hand (or unplugging) hands it back to the recipe at once.
+- Takes over a charge the charger starts by itself (the dé does on plug-in), so it stops without surplus or at the target (spec 006).
+- At night off-peak, the guaranteed minimum charges at the maximum current (spec 006).
 
 ## Parameters
 
-| Parameter               | Default | Meaning                                                                                                 |
-| ----------------------- | ------- | ------------------------------------------------------------------------------------------------------- |
-| Charger                 | —       | The EV charger to drive                                                                                 |
-| Vehicles                | —       | The cars that charge on it (optional; without one, no % target)                                         |
-| Target (%)              | 80      | Surplus charging stops here, or at the car's own limit if lower                                         |
-| Guaranteed minimum (%)  | 30      | Reached by the departure time from the grid, off-peak first; 0 disables                                 |
-| Departure               | 07:30   | When the minimum must be reached                                                                        |
-| Charge current (A)      | 10      | The guaranteed minimum's current, a floor a larger surplus raises (and surplus charging on older cores) |
-| Max surplus current (A) | 16      | Upper bound when the current follows the surplus (core spec 185)                                        |
+| Parameter                      | Default | Meaning                                                                                                                                                              |
+| ------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Charger                        | —       | The EV charger to drive                                                                                                                                              |
+| Vehicles                       | —       | The cars that charge on it (optional; without one, no % target)                                                                                                      |
+| Target (%)                     | 80      | Surplus charging stops here, or at the car's own limit if lower                                                                                                      |
+| Guaranteed minimum (%)         | 30      | Reached by the departure time from the grid, off-peak first; 0 disables                                                                                              |
+| Departure                      | 07:30   | When the minimum must be reached                                                                                                                                     |
+| Guaranteed minimum current (A) | 10      | The guaranteed minimum's current, a floor a larger surplus raises; at night off-peak the guarantee runs at the maximum current (and surplus charging on older cores) |
+| Maximum current (A)            | 16      | Upper bound when the current follows the surplus (core spec 185), and the guarantee's current at night off-peak                                                      |
 
 Surplus charging needs an energy profile on the charger (flexible load). Without one, the guaranteed minimum still works.
 

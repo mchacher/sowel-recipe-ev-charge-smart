@@ -56,8 +56,9 @@ export const SLOTS: RecipeSlotDef[] = [
   },
   {
     id: "max_current",
-    name: "Maximum surplus current (A)",
-    description: "The highest current the surplus may drive the charger to (core spec 185)",
+    name: "Maximum current (A)",
+    description:
+      "The highest current asked of the charger: on surplus (core spec 185), and for the guaranteed minimum at night off-peak",
     type: "number",
     required: true,
     defaultValue: 16,
@@ -65,9 +66,9 @@ export const SLOTS: RecipeSlotDef[] = [
   },
   {
     id: "charge_current",
-    name: "Charge current (A)",
+    name: "Guaranteed minimum current (A)",
     description:
-      "The current of the guaranteed minimum (and of surplus charging on a core without modulating claims)",
+      "The guaranteed minimum charges at least at this current, more when the surplus allows, at the maximum at night off-peak (and surplus charging on a core without modulating claims)",
     type: "number",
     required: true,
     defaultValue: 10,
@@ -102,13 +103,14 @@ export const I18N: Record<string, RecipeLangPack> = {
         description: "Heure à laquelle le minimum doit être atteint, chaque jour",
       },
       max_current: {
-        name: "Courant maximal sur surplus (A)",
-        description: "Le courant le plus élevé que le surplus peut demander à la borne",
+        name: "Courant maximal (A)",
+        description:
+          "Le courant le plus élevé demandé à la borne : sur surplus, et pour le minimum garanti la nuit en heures creuses",
       },
       charge_current: {
-        name: "Courant de charge (A)",
+        name: "Courant du minimum garanti (A)",
         description:
-          "Le courant du minimum garanti (et de la charge sur surplus sur un core sans demande modulable)",
+          "Le minimum garanti charge au moins à ce courant, davantage si le surplus le permet, au courant maximal la nuit en heures creuses (et la charge sur surplus sur un core sans demande modulable)",
       },
     },
   },
