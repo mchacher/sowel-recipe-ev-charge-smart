@@ -694,10 +694,24 @@ describe("spec 006 — the charger's own starts, night off-peak at max current",
     w.grant();
     await settle();
     w.revoke();
-    await settle(5_000); // stop accepted, the reading still says drawing
+    await settle(60_000); // stop accepted, the reading still says drawing: past the delay, inside the quiet window
     w.carStops();
     await settle(5 * 60_000);
     expect(states(w)).toEqual([true, false]);
+    expect(adopted(w)).toHaveLength(0);
+    h.stop();
+  });
+
+  it("a charge drawing while the recipe's start is in progress is not adopted", async () => {
+    const w = new FakeWorld().charger().car("rafale");
+    w.car_ = "asleep";
+    const h = start(w);
+    await settle();
+    w.grant();
+    await settle(); // refused, wake sent, waiting 30 s before the retry
+    w.set("charger", "state", true); // the car wakes and draws before the retry
+    w.set("charger", "vehicle", "charging");
+    await settle(ADOPT_DELAY_MS + 15_000);
     expect(adopted(w)).toHaveLength(0);
     h.stop();
   });

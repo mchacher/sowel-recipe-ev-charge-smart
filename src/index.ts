@@ -285,7 +285,11 @@ class Instance implements RecipeInstanceHandle {
    */
   private guaranteeAmps(): number {
     // Spec 006 FR3 — night off-peak: the maximum, never below the fixed current.
-    if (this.nightOffPeak()) return Math.max(this.p.current, this.range?.maxA ?? this.p.maxCurrent);
+    if (this.nightOffPeak())
+      return Math.max(
+        this.p.current,
+        rangeOf(readCharger(this.ctx, this.p.chargerId), this.p.maxCurrent).maxA,
+      );
     return this.granted && this.modulating() && this.budgetAmps !== null
       ? Math.max(this.p.current, this.budgetAmps)
       : this.p.current;
@@ -565,7 +569,8 @@ class Instance implements RecipeInstanceHandle {
     }
     if (this.unownedSince === null) {
       this.unownedSince = Date.now();
-      this.later(ADOPT_DELAY_MS, () => this.evaluate());
+      // A margin: a timer may fire a little before Date.now() says it is due.
+      this.later(ADOPT_DELAY_MS + 1_000, () => this.evaluate());
       return;
     }
     if (Date.now() - this.unownedSince < ADOPT_DELAY_MS) return;

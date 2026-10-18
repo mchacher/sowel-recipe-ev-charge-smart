@@ -54,13 +54,14 @@ Two more findings from the same investigation:
 
 ## Edge cases
 
-| Case                                                         | Expected                                                          |
-| ------------------------------------------------------------ | ----------------------------------------------------------------- |
-| The recipe's own stop, reading still `true` for a moment     | Not adopted: quiet window after the recipe's `state` order        |
-| Drawing stops within the 30 s delay                          | Nothing adopted; the delay restarts on the next draw              |
-| A start in progress (wake, retry)                            | Not adopted: the start sets ownership itself                      |
-| A person's ON in the vendor app or on the charger's buttons  | Adopted (no Sowel order): accepted trade-off                      |
-| Charger offline (`vehicle` null)                             | Nothing adopted, nothing changes (spec 001)                       |
-| Car refused twice (`gaveUp`), then the charger draws again   | Adopted, then stopped by `done`                                   |
-| `max_current` below `charge_current`                         | `max(charge_current, max_current)`: never below the fixed current |
-| Night off-peak with a granted surplus budget (none expected) | `max_current` (already the upper bound of the budget)             |
+| Case                                                                                                                         | Expected                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| The recipe's own stop, reading still `true` for a moment                                                                     | Not adopted: quiet window after the recipe's `state` order        |
+| Drawing stops within the 30 s delay                                                                                          | Nothing adopted; the delay restarts on the next draw              |
+| A person's ON through Sowel whose effect comes after the plugin's 8 s verification (`equipment.order.failed`, no `executed`) | Adopted after 30 s, like an auto-start: rare, accepted            |
+| A start in progress (wake, retry)                                                                                            | Not adopted: the start sets ownership itself                      |
+| A person's ON in the vendor app or on the charger's buttons                                                                  | Adopted (no Sowel order): accepted trade-off                      |
+| Charger offline (`vehicle` null)                                                                                             | Nothing adopted, nothing changes (spec 001)                       |
+| Car refused twice (`gaveUp`), then the charger draws again                                                                   | Adopted, then stopped by `done`                                   |
+| `max_current` below `charge_current`                                                                                         | `max(charge_current, max_current)`: never below the fixed current |
+| Night off-peak with a granted surplus budget (none expected)                                                                 | `max_current` (already the upper bound of the budget)             |

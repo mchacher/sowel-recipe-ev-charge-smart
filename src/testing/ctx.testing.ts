@@ -195,7 +195,7 @@ export class FakeWorld {
               getSunlight: () => ({
                 sunrise: null,
                 sunset: null,
-                isDaylight: this.isDaylight === "absent" ? null : this.isDaylight,
+                isDaylight: this.isDaylight as boolean | null,
               }),
             }),
         energy:
