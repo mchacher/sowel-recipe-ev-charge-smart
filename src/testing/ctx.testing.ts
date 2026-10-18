@@ -45,6 +45,8 @@ export class FakeWorld {
   /** Bounds of the charger's `charge_current` order. */
   currentBounds: { min?: number; max?: number } = { min: 6, max: 16 };
   offPeakNow: boolean | null = null;
+  /** Core spec 126 daylight; "absent" = a core without `getSunlight`. */
+  isDaylight: boolean | null | "absent" = null;
 
   add(e: FakeEquipment): this {
     this.equipments.set(e.id, e);
@@ -77,6 +79,13 @@ export class FakeWorld {
 
   /** A person switching the charger from Sowel: the order event, then the device. */
   userOrder(value: boolean): void {
+    this.userOrderEvent(value);
+    this.set("charger", "state", value);
+    this.set("charger", "vehicle", value ? "charging" : "connected");
+  }
+
+  /** Only the order event of a person's switch (the core emits it after a verified write). */
+  userOrderEvent(value: boolean): void {
     for (const h of this.handlers.get("equipment.order.executed") ?? [])
       h({
         type: "equipment.order.executed",
@@ -85,8 +94,12 @@ export class FakeWorld {
         value,
         source: { kind: "manual", userId: "u" },
       });
-    this.set("charger", "state", value);
-    this.set("charger", "vehicle", value ? "charging" : "connected");
+  }
+
+  /** The car is plugged in and the dé starts charging by itself (no order). */
+  plugInAutoStart(): void {
+    this.set("charger", "state", true);
+    this.set("charger", "vehicle", "charging");
   }
 
   /** The car stops drawing by itself (limit, sleep, schedule): the dé reports state off. */
@@ -176,6 +189,15 @@ export class FakeWorld {
           offPeakToday: [],
           isOffPeakNow: this.offPeakNow,
         }),
+        ...(this.isDaylight === "absent"
+          ? {}
+          : {
+              getSunlight: () => ({
+                sunrise: null,
+                sunset: null,
+                isDaylight: this.isDaylight === "absent" ? null : this.isDaylight,
+              }),
+            }),
         energy:
           this.arbiter === "absent"
             ? undefined

@@ -1,6 +1,6 @@
 # Spec 006 — The recipe owns the charger's own starts; night off-peak at max current
 
-- **Status**: Draft
+- **Status**: Implemented
 - **Date**: 2026-10-18
 - **Related**: spec 001 (amends FR13's restart rule and the "a charge the recipe did not start is left alone" behaviour), spec 005 (guarantee current), core spec 126 (`getSunlight`), core spec 138 (`getTariff`), core spec 140 (arbiter journal); `sowel-plugin-tuya` spec 001 "Hardware findings" (auto-start on plug-in)
 
@@ -37,19 +37,19 @@ Two more findings from the same investigation:
 
 ## Acceptance criteria
 
-- [ ] AC1 — Car plugged in, the charger starts by itself in the evening, no surplus → the recipe adopts the charge and stops it; one adoption log line.
-- [ ] AC2 — The charger starts by itself, battery at or above the target → adopted, stopped, `done`.
-- [ ] AC3 — The charger starts by itself, battery below the minimum, night off-peak → adopted, kept, current moved to `max_current`.
-- [ ] AC4 — A person's ON through Sowel still holds; the charge is not adopted nor stopped.
-- [ ] AC5 — Restart without ownership nor hold, charge running, no surplus → adopted and stopped (no longer manual).
-- [ ] AC6 — Guarantee, off-peak, `isDaylight` false → starts at `max_current` (16 A with `max_current` 16, charger max 16).
-- [ ] AC7 — Guarantee, off-peak, `isDaylight` true (afternoon slot) → spec 005 current.
-- [ ] AC8 — Guarantee, peak hours past the latest start, night → `charge_current`.
-- [ ] AC9 — Guarantee, off-peak, `isDaylight` null or `getSunlight` absent → spec 005 current.
-- [ ] AC10 — Owned guarantee at 16 A at night, off-peak ends → back to `charge_current`, still charging.
-- [ ] AC11 — In `done`, ten evaluations open no claim (no `claimCapacity` call).
-- [ ] AC12 — A person's ON through Sowel whose `state` reading arrives before the order event: held, never stopped.
-- [ ] AC13 — The slots show the FR6 labels in English and French.
+- [x] AC1 — Car plugged in, the charger starts by itself in the evening, no surplus → the recipe adopts the charge and stops it; one adoption log line.
+- [x] AC2 — The charger starts by itself, battery at or above the target → adopted, stopped, `done`.
+- [x] AC3 — The charger starts by itself, battery below the minimum, night off-peak → adopted, kept, current moved to `max_current`.
+- [x] AC4 — A person's ON through Sowel still holds; the charge is not adopted nor stopped.
+- [x] AC5 — Restart without ownership nor hold, charge running, no surplus → adopted and stopped (no longer manual).
+- [x] AC6 — Guarantee, off-peak, `isDaylight` false → starts at `max_current` (16 A with `max_current` 16, charger max 16).
+- [x] AC7 — Guarantee, off-peak, `isDaylight` true (afternoon slot) → spec 005 current.
+- [x] AC8 — Guarantee, peak hours past the latest start, night → `charge_current`.
+- [x] AC9 — Guarantee, off-peak, `isDaylight` null or `getSunlight` absent → spec 005 current.
+- [x] AC10 — Owned guarantee at 16 A at night, off-peak ends → back to `charge_current`, still charging.
+- [x] AC11 — In `done`, ten evaluations open no claim (no `claimCapacity` call).
+- [x] AC12 — A person's ON through Sowel whose `state` reading arrives before the order event: held, never stopped.
+- [x] AC13 — The slots show the FR6 labels in English and French.
 - [ ] AC14 — Live: on the owner's installation, a plug-in in the evening is adopted and stopped; the next night's guarantee runs at 16 A.
 
 ## Edge cases

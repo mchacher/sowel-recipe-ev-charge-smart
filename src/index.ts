@@ -24,6 +24,12 @@ export const RECIPE_ID = "ev-charge-smart";
 export const TICK_MS = 60_000;
 /** After the recipe orders the charger, give the car this long to start drawing. */
 export const QUIET_MS = 120_000;
+/**
+ * Spec 006 FR1 — an unexplained charge is adopted after this long. A person's
+ * ON through Sowel shows on the `state` reading before its order event (the
+ * core emits it once the plugin has verified the write), and must hold first.
+ */
+export const ADOPT_DELAY_MS = 30_000;
 /** A denied claim is asked again after this long. */
 export const CLAIM_RETRY_MS = 15 * 60_000;
 
@@ -137,6 +143,8 @@ class Instance implements RecipeInstanceHandle {
   private lastMode: Mode | null = null;
   private lastActiveReason: string | null = null;
   private wasUnplugged = false;
+  /** Spec 006 FR1 — since when an unexplained charge has been drawing. */
+  private unownedSince: number | null = null;
   private stopped = false;
   private evaluating = false;
   private again = false;
@@ -168,15 +176,8 @@ class Instance implements RecipeInstanceHandle {
     });
 
     // Restart: keep a charge the recipe owned. A charge running without that
-    // record was started by someone else: manual hold.
-    const charger = readCharger(ctx, p.chargerId);
+    // record nor a persisted hold is adopted by the evaluation (spec 006 FR2).
     if (ctx.state.get("owned") === true) this.control.owned = true;
-    else if (
-      charger.state === true &&
-      charger.vehicle !== "disconnected" &&
-      charger.vehicle !== null
-    )
-      this.setHold(true);
 
     this.unsubscribers.push(
       ctx.eventBus.onType("equipment.data.changed", (e) => this.onData(e as DataChangedEvent)),
@@ -283,9 +284,19 @@ class Instance implements RecipeInstanceHandle {
    * budget's, while a modulating claim is granted; never below `charge_current`.
    */
   private guaranteeAmps(): number {
+    // Spec 006 FR3 — night off-peak: the maximum, never below the fixed current.
+    if (this.nightOffPeak()) return Math.max(this.p.current, this.range?.maxA ?? this.p.maxCurrent);
     return this.granted && this.modulating() && this.budgetAmps !== null
       ? Math.max(this.p.current, this.budgetAmps)
       : this.p.current;
+  }
+
+  /** Spec 006 FR3 — off-peak now, and the core says it is night (unknown daylight is not). */
+  private nightOffPeak(): boolean {
+    return (
+      this.ctx.helpers.getTariff?.().isOffPeakNow === true &&
+      this.ctx.helpers.getSunlight?.().isDaylight === false
+    );
   }
 
   /** The claim is modulating: the core supports spec 185 and a range was declared. */
@@ -424,28 +435,34 @@ class Instance implements RecipeInstanceHandle {
         }
       }
 
-      // The claim first: a grant may arrive synchronously and must be decided on.
-      const watts = Math.round(this.p.current * (charger.voltage ?? NOMINAL_VOLTAGE));
-      if (!unplugged && charger.vehicle !== null && !this.control.gaveUp)
-        this.ensureClaim(watts, rangeOf(charger, this.p.maxCurrent));
-
       const rate = car ? parseRate(this.ctx.state.get(`rate.${car.id}`)).ratePctPerH : 10;
       const now = new Date();
-      const d = decide({
-        vehicle: charger.vehicle,
-        battery: car?.battery ?? null,
-        carCompleted: car?.chargingState === "completed",
-        carLimit: car?.chargeLimit ?? null,
-        targetSoc: this.p.targetSoc,
-        minSoc: this.p.minSoc,
-        departure: this.p.departure,
-        offPeakNow: this.ctx.helpers.getTariff?.().isOffPeakNow ?? null,
-        ratePctPerH: rate,
-        manualHold: this.hold,
-        refusedUntilUnplug: this.control.gaveUp,
-        granted: this.granted,
-        now,
-      });
+      const decideNow = () =>
+        decide({
+          vehicle: charger.vehicle,
+          battery: car?.battery ?? null,
+          carCompleted: car?.chargingState === "completed",
+          carLimit: car?.chargeLimit ?? null,
+          targetSoc: this.p.targetSoc,
+          minSoc: this.p.minSoc,
+          departure: this.p.departure,
+          offPeakNow: this.ctx.helpers.getTariff?.().isOffPeakNow ?? null,
+          ratePctPerH: rate,
+          manualHold: this.hold,
+          refusedUntilUnplug: this.control.gaveUp,
+          granted: this.granted,
+          now,
+        });
+      let d = decideNow();
+
+      // Spec 006 FR5 — open the claim only when the decision keeps it. A grant
+      // may arrive synchronously: decided on before any charger action.
+      if (d.claim === "keep" && !unplugged && charger.vehicle !== null && !this.control.gaveUp) {
+        const watts = Math.round(this.p.current * (charger.voltage ?? NOMINAL_VOLTAGE));
+        const grantedBefore = this.granted;
+        this.ensureClaim(watts, rangeOf(charger, this.p.maxCurrent));
+        if (this.granted !== grantedBefore) d = decideNow();
+      }
 
       // Arbiter: no need while backing off — nothing draws, others may use the surplus.
       if (d.claim === "release") this.releaseClaim();
@@ -453,6 +470,7 @@ class Instance implements RecipeInstanceHandle {
 
       // Charger.
       const drawing = charger.state === true;
+      this.adoptUnexplained(drawing, charger.vehicle);
       if (d.charger === "run") {
         const canStart =
           !this.control.starting &&
@@ -525,6 +543,36 @@ class Instance implements RecipeInstanceHandle {
     } catch (err) {
       this.ctx.logger.error({ err }, "ev-charge-smart evaluation failed");
     }
+  }
+
+  /**
+   * Spec 006 FR1 — a charge drawing that the recipe did not start and no person
+   * switched on through Sowel (the dé starts by itself on plug-in) is the
+   * recipe's, once it has drawn for ADOPT_DELAY_MS with nothing explaining it.
+   */
+  private adoptUnexplained(drawing: boolean, vehicle: string | null): void {
+    const adoptable =
+      drawing &&
+      !this.control.owned &&
+      !this.hold &&
+      !this.control.starting &&
+      vehicle !== null &&
+      vehicle !== "disconnected" &&
+      Date.now() > this.quietUntil;
+    if (!adoptable) {
+      this.unownedSince = null;
+      return;
+    }
+    if (this.unownedSince === null) {
+      this.unownedSince = Date.now();
+      this.later(ADOPT_DELAY_MS, () => this.evaluate());
+      return;
+    }
+    if (Date.now() - this.unownedSince < ADOPT_DELAY_MS) return;
+    this.unownedSince = null;
+    this.control.owned = true;
+    this.setOwned(true);
+    this.ctx.log("Charge démarrée par la borne : la recette la prend en main");
   }
 
   /** FR9: at departure, below the minimum → one alert per day (kept across restarts). */

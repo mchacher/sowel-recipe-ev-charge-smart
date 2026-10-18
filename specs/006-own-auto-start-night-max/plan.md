@@ -1,12 +1,12 @@
 # Spec 006 — Plan
 
-- [ ] 1. `src/sowel-types.ts`: optional `getSunlight`; `src/testing/ctx.testing.ts`: settable fake.
-- [ ] 2. `src/index.ts`: claim after the decision (FR5).
-- [ ] 3. `src/index.ts`: adoption (FR1) and the restart rule (FR2).
-- [ ] 4. `src/index.ts`: `nightOffPeak()` in `guaranteeAmps()` (FR3, FR4).
-- [ ] 4b. `src/i18n.ts` and README: FR6 labels.
-- [ ] 5. Tests in `src/index.test.ts`; the "restart … without, a running charge is manual" test rewritten.
-- [ ] 6. Spec 001 FR13 marked as amended; README if it describes the restart rule.
+- [x] 1. `src/sowel-types.ts`: optional `getSunlight`; `src/testing/ctx.testing.ts`: settable fake.
+- [x] 2. `src/index.ts`: claim after the decision (FR5).
+- [x] 3. `src/index.ts`: adoption (FR1) and the restart rule (FR2).
+- [x] 4. `src/index.ts`: `nightOffPeak()` in `guaranteeAmps()` (FR3, FR4).
+- [x] 4b. `src/i18n.ts` and README: FR6 labels.
+- [x] 5. Tests in `src/index.test.ts`; the "restart … without, a running charge is manual" test rewritten.
+- [x] 6. Spec 001 FR13 marked as amended; README if it describes the restart rule.
 - [ ] 7. Version bump and changelog at release (`ev-release`).
 
 ## Test plan
