@@ -2,6 +2,13 @@
 
 All notable changes to this recipe. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
+## v0.1.4
+
+- **The recipe takes over a charge the charger starts by itself** (spec 006). The dé starts charging as soon as the car is plugged in, and the recipe used to leave alone any charge it had not started: one evening the car charged all night, in peak hours and past the target. Now a charge that nothing explains (no start of the recipe's, no ON from you in Sowel) is the recipe's after 30 s, and stops without surplus or at the target. An ON from the vendor app or the charger's buttons is taken over the same way.
+- **At night off-peak, the guaranteed minimum charges at the maximum current** (spec 006), so a larger battery reaches its minimum overnight. The afternoon off-peak slot and a peak-hour guarantee keep the guaranteed minimum current.
+- The two current settings are renamed "Guaranteed minimum current (A)" and "Maximum current (A)"; their values are kept.
+- The recipe no longer opens and releases an arbiter claim on every evaluation once the target is reached.
+
 ## v0.1.3
 
 - **The guaranteed minimum takes the surplus when it is larger** (spec 005). During the guarantee (for instance in an afternoon off-peak slot) the charger used to stay at `charge_current` even when the sun offered more; the surplus was exported. It now charges at the larger of `charge_current` and the current the surplus allows, and never below `charge_current`.
