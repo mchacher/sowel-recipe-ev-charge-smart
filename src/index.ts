@@ -30,6 +30,12 @@ export const QUIET_MS = 120_000;
  * core emits it once the plugin has verified the write), and must hold first.
  */
 export const ADOPT_DELAY_MS = 30_000;
+/**
+ * Spec 007 FR2 — by day, an adopted surplus charge is kept this long while its
+ * claim is pending: the arbiter grants only after its engage hold (300 s on the
+ * owner's instance), and a car that pauses may not resume (the Megane).
+ */
+export const ADOPT_GRACE_MS = 7 * 60_000;
 /** A denied claim is asked again after this long. */
 export const CLAIM_RETRY_MS = 15 * 60_000;
 
@@ -145,6 +151,11 @@ class Instance implements RecipeInstanceHandle {
   private wasUnplugged = false;
   /** Spec 006 FR1 — since when an unexplained charge has been drawing. */
   private unownedSince: number | null = null;
+  /**
+   * Spec 007 FR2 — when the recipe adopted the charge it owns. Cleared on a
+   * grant, a revoke, a disown or another mode; `inAdoptGrace` re-checks the rest.
+   */
+  private adoptedAt: number | null = null;
   private stopped = false;
   private evaluating = false;
   private again = false;
@@ -341,6 +352,7 @@ class Instance implements RecipeInstanceHandle {
       },
       onRevoked: (reason) => {
         this.granted = false;
+        this.adoptedAt = null;
         // Spec 004 — a manual-override revoke is not a person: the arbiter
         // also raises it on its own inferences (a "wall switch" read from a
         // charger whose state follows the car). People are seen through their
@@ -420,6 +432,21 @@ class Instance implements RecipeInstanceHandle {
       const active = activeCar(cars, charger.vehicle);
       const car = active.car;
       const unplugged = charger.vehicle === "disconnected";
+
+      // Spec 007 FR1 — a car drawing by itself contradicts the give-up: start over.
+      // Not under a manual hold (the person's charge, not the car asking), nor in
+      // the quiet window after the recipe's own order (a transient reading).
+      if (
+        this.control.gaveUp &&
+        charger.state === true &&
+        charger.vehicle !== null &&
+        !unplugged &&
+        !this.hold &&
+        Date.now() > this.quietUntil
+      ) {
+        this.control.resetSession();
+        this.ctx.log("La voiture redemande du courant : la recette reprend la main");
+      }
 
       if (unplugged) {
         if (!this.wasUnplugged) {
@@ -508,16 +535,23 @@ class Instance implements RecipeInstanceHandle {
           this.control.owned = true;
           this.setOwned(true);
         }
-      } else if (d.charger === "stop" && this.control.owned && !this.control.starting) {
-        this.after(this.control.stop(MODE_LABEL[d.mode]));
       }
+      const grace = d.charger === "stop" && this.inAdoptGrace(d, drawing);
+      if (d.charger === "stop" && this.control.owned && !this.control.starting && !grace)
+        this.after(this.control.stop(MODE_LABEL[d.mode]));
+      // Spec 007 FR2 — the grace ends on a grant, a disown, or any other mode.
+      if (this.adoptedAt !== null && (!this.control.owned || this.granted || d.mode !== "surplus"))
+        this.adoptedAt = null;
 
       // Spec 002 FR2/FR4, spec 005 — the current of an owned, drawing charge:
       // the budget's on surplus; on the guarantee the larger of the fixed one
       // and the budget's (a surplus charge turning into a guarantee must not
       // stay at 6 A, nor drop below the surplus it was given).
-      const desired =
-        d.charger !== "run"
+      // Spec 007 FR2 — a charge kept in its grace runs at the minimum current:
+      // it may be drawing from the grid until the arbiter decides.
+      const desired = grace
+        ? (this.range?.minA ?? this.p.current)
+        : d.charger !== "run"
           ? null
           : d.mode === "surplus" && this.modulating()
             ? this.budgetAmps
@@ -577,7 +611,25 @@ class Instance implements RecipeInstanceHandle {
     this.unownedSince = null;
     this.control.owned = true;
     this.setOwned(true);
+    this.adoptedAt = Date.now();
+    this.later(ADOPT_GRACE_MS + 1_000, () => this.evaluate());
     this.ctx.log("Charge démarrée par la borne : la recette la prend en main");
+  }
+
+  /**
+   * Spec 007 FR2/FR3 — by day, an adopted surplus charge waits for the
+   * arbiter's verdict on its pending claim instead of being stopped at once.
+   */
+  private inAdoptGrace(d: Decision, drawing: boolean): boolean {
+    return (
+      this.adoptedAt !== null &&
+      d.mode === "surplus" &&
+      this.control.owned &&
+      drawing &&
+      this.claim?.status() === "pending" &&
+      this.ctx.helpers.getSunlight?.().isDaylight === true &&
+      Date.now() - this.adoptedAt < ADOPT_GRACE_MS
+    );
   }
 
   /** FR9: at departure, below the minimum → one alert per day (kept across restarts). */
