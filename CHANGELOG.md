@@ -2,6 +2,11 @@
 
 All notable changes to this recipe. Versions follow semver; the registry in `mchacher/sowel` carries the SHA256 of each released tarball.
 
+## v0.1.5
+
+- **A car that asks for current again is charged again** (spec 007). When the car refused two starts, the recipe gave up until the car was unplugged, and stopped the charge if the car later started drawing by itself. Now a car that draws by itself clears that give-up and the recipe takes the charge back.
+- **By day, a charge started by the car or the charger is given time** (spec 007). The recipe used to stop it after 30 s if the arbiter had not granted the surplus yet, but the arbiter waits several minutes of steady surplus before granting. It is now kept up to 7 minutes at the minimum current while the request is pending, then stopped if nothing was granted. A car that does not resume after a pause (the Megane E-Tech) keeps its charge. At night nothing changes.
+
 ## v0.1.4
 
 - **The recipe takes over a charge the charger starts by itself** (spec 006). The dé starts charging as soon as the car is plugged in, and the recipe used to leave alone any charge it had not started: one evening the car charged all night, in peak hours and past the target. Now a charge that nothing explains (no start of the recipe's, no ON from you in Sowel) is the recipe's after 30 s, and stops without surplus or at the target. An ON from the vendor app or the charger's buttons is taken over the same way.
