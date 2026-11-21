@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ADOPT_DELAY_MS, createRecipe, readParams } from "./index.js";
+import { ADOPT_DELAY_MS, ADOPT_GRACE_MS, createRecipe, readParams } from "./index.js";
 import { FakeWorld } from "./testing/ctx.testing.js";
 
 const PARAMS = {
@@ -804,5 +804,195 @@ describe("spec 006 — the charger's own starts, night off-peak at max current",
     const fr = r.i18n!.fr.slots!;
     expect(fr.charge_current.name).toBe("Courant du minimum garanti (A)");
     expect(fr.max_current.name).toBe("Courant maximal (A)");
+  });
+});
+
+describe("spec 007 — a car that asks again is charged again", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 21, 11, 0, 0));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const MEGANE = { ...PARAMS, vehicles: ["megane"] };
+  const asksAgain = (w: FakeWorld) => w.logs.filter((l) => /redemande/.test(l.message));
+  const adopted = (w: FakeWorld) => w.logs.filter((l) => /prend en main/.test(l.message));
+
+  /** Two failed start sequences: the recipe gives up until unplug. */
+  async function gaveUp(battery = 44) {
+    const w = new FakeWorld().charger().car("megane", { battery_level: battery });
+    w.isDaylight = true;
+    w.car_ = "full";
+    const h = start(w, MEGANE);
+    await settle();
+    w.grant();
+    await settle(2 * 3_600_000);
+    expect(w.state.get("mode")).toBe("done");
+    expect(w.state.get("summary")).toMatch(/ne demande plus/);
+    w.car_ = "awake";
+    return { w, h };
+  }
+
+  it("the car draws by itself after the give-up: reset, claimed, adopted, kept during the grace (AC1)", async () => {
+    const { w, h } = await gaveUp();
+    const claims = w.claims.length;
+    const sent = states(w).length;
+    w.plugInAutoStart();
+    await settle();
+    expect(asksAgain(w)).toHaveLength(1);
+    expect(w.state.get("mode")).toBe("surplus");
+    expect(w.claims.length).toBe(claims + 1);
+    expect(w.lastClaim()!.handle.status()).toBe("pending");
+    await settle(ADOPT_DELAY_MS + 1_000);
+    expect(adopted(w)).toHaveLength(1);
+    await settle(6 * 60_000);
+    expect(states(w)).toHaveLength(sent);
+    expect(w.equipments.get("charger")!.data.state).toBe(true);
+    expect(asksAgain(w)).toHaveLength(1);
+    h.stop();
+  });
+
+  it("granted within the grace: the charge goes on (AC2)", async () => {
+    const { w, h } = await gaveUp();
+    const sent = states(w).length;
+    w.plugInAutoStart();
+    await settle(ADOPT_DELAY_MS + 1_000);
+    await settle(4 * 60_000);
+    w.grant();
+    await settle(15 * 60_000);
+    expect(states(w)).toHaveLength(sent);
+    expect(w.equipments.get("charger")!.data.state).toBe(true);
+    h.stop();
+  });
+
+  it("no grant within the grace: stopped once, at its end (AC3)", async () => {
+    const { w, h } = await gaveUp();
+    const sent = states(w).length;
+    w.plugInAutoStart();
+    await settle(ADOPT_DELAY_MS + 1_000);
+    await settle(ADOPT_GRACE_MS - 30_000);
+    expect(states(w)).toHaveLength(sent);
+    await settle(60_000);
+    expect(states(w).slice(sent)).toEqual([false]);
+    await settle(10 * 60_000);
+    expect(states(w).slice(sent)).toEqual([false]);
+    h.stop();
+  });
+
+  it("the car draws by itself after the give-up, at the target: done, stopped (AC4)", async () => {
+    const { w, h } = await gaveUp();
+    const sent = states(w).length;
+    w.set("megane", "battery_level", 85);
+    w.plugInAutoStart();
+    await settle(ADOPT_DELAY_MS + 1_000);
+    expect(w.state.get("mode")).toBe("done");
+    expect(states(w).slice(sent)).toEqual([false]);
+    h.stop();
+  });
+
+  it("adopted at night: stopped right after adoption, no grace (AC5)", async () => {
+    const w = new FakeWorld().charger({ vehicle: "disconnected" }).car("megane");
+    w.isDaylight = false;
+    const h = start(w, MEGANE);
+    await settle();
+    w.plugInAutoStart();
+    await settle(ADOPT_DELAY_MS + 1_000);
+    expect(states(w)).toEqual([false]);
+    h.stop();
+  });
+
+  it("adopted by day on plug-in, not granted: kept during the grace, then stopped (AC6)", async () => {
+    const w = new FakeWorld().charger({ vehicle: "disconnected" }).car("megane");
+    w.isDaylight = true;
+    const h = start(w, MEGANE);
+    await settle();
+    w.plugInAutoStart();
+    await settle(ADOPT_DELAY_MS + 1_000);
+    expect(adopted(w)).toHaveLength(1);
+    await settle(ADOPT_GRACE_MS - 30_000);
+    expect(states(w)).toEqual([]);
+    await settle(60_000);
+    expect(states(w)).toEqual([false]);
+    h.stop();
+  });
+
+  it("a grace in progress, the car is unplugged: unplugged, switched off, the grace ends (AC7)", async () => {
+    const w = new FakeWorld().charger({ vehicle: "disconnected" }).car("megane");
+    w.isDaylight = true;
+    const h = start(w, MEGANE);
+    await settle();
+    w.plugInAutoStart();
+    await settle(ADOPT_DELAY_MS + 1_000);
+    expect(states(w)).toEqual([]);
+    w.set("charger", "vehicle", "disconnected"); // the reading still says drawing
+    await settle();
+    expect(w.state.get("mode")).toBe("unplugged");
+    expect(states(w)).toEqual([false]);
+    expect(w.state.get("owned")).toBe(false);
+    h.stop();
+  });
+
+  it("unknown daylight, or a core without getSunlight: no grace (FR3)", async () => {
+    for (const isDaylight of [null, "absent"] as const) {
+      const w = new FakeWorld().charger({ vehicle: "disconnected" }).car("megane");
+      w.isDaylight = isDaylight;
+      const h = start(w, MEGANE);
+      await settle();
+      w.plugInAutoStart();
+      await settle(ADOPT_DELAY_MS + 1_000);
+      expect(states(w)).toEqual([false]);
+      h.stop();
+    }
+  });
+
+  it("a grace runs at the minimum current, whatever the charger was left at (AC6b)", async () => {
+    const w = new FakeWorld()
+      .charger({ vehicle: "disconnected", charge_current: 16 })
+      .car("megane");
+    w.isDaylight = true;
+    const h = start(w, { ...MEGANE, max_current: 16 });
+    await settle();
+    w.plugInAutoStart();
+    await settle(ADOPT_DELAY_MS + 1_000);
+    expect(states(w)).toEqual([]);
+    expect(w.ordersTo("charge_current").map((o) => o.value)).toEqual([6]);
+    h.stop();
+  });
+
+  it("a grace in progress, the arbiter revokes: the grace ends, stopped", async () => {
+    const w = new FakeWorld().charger({ vehicle: "disconnected" }).car("megane");
+    w.isDaylight = true;
+    const h = start(w, MEGANE);
+    await settle();
+    w.plugInAutoStart();
+    await settle(ADOPT_DELAY_MS + 1_000);
+    w.revoke();
+    await settle();
+    expect(states(w)).toEqual([false]);
+    h.stop();
+  });
+
+  it("a person's ON after the give-up: manual hold, the give-up is not cleared by FR1", async () => {
+    const { w, h } = await gaveUp();
+    w.userOrder(true);
+    await settle(ADOPT_DELAY_MS * 4);
+    expect(w.state.get("mode")).toBe("manual");
+    expect(asksAgain(w)).toHaveLength(0);
+    h.stop();
+  });
+
+  it("a grace in progress, the battery reaches the target: stopped at once", async () => {
+    const w = new FakeWorld().charger({ vehicle: "disconnected" }).car("megane");
+    w.isDaylight = true;
+    const h = start(w, MEGANE);
+    await settle();
+    w.plugInAutoStart();
+    await settle(ADOPT_DELAY_MS + 1_000);
+    expect(states(w)).toEqual([]);
+    w.set("megane", "battery_level", 80);
+    await settle();
+    expect(w.state.get("mode")).toBe("done");
+    expect(states(w)).toEqual([false]);
+    h.stop();
   });
 });

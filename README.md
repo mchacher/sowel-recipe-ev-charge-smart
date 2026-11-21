@@ -6,7 +6,7 @@ Smart EV charging for [Sowel](https://docs.sowel.org): one charger (core `ev_cha
 - Guarantees a **minimum battery level by a departure time**, from off-peak hours first.
 - **Wakes a sleeping car** when the charger refuses to start, and refreshes the car's data after a start.
 - Leaves a charge switched on by hand alone; switching the charger off by hand (or unplugging) hands it back to the recipe at once.
-- Takes over a charge the charger starts by itself (the dé does on plug-in), so it stops without surplus or at the target (spec 006).
+- Takes over a charge the charger starts by itself (the dé does on plug-in), so it stops without surplus or at the target (spec 006). By day it gives the arbiter up to 7 minutes to grant that charge before stopping it, and a car that starts drawing again after the recipe gave up on it is charged again (spec 007).
 - At night off-peak, the guaranteed minimum charges at the maximum current (spec 006).
 
 ## Parameters
